@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stock-ai"
+version = "0.1.0"
+description = "Two-Stage LLM Analytics Architecture for Retail Demand Forecasting"
+readme = "README.md"
+requires-python = ">=3.9"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
