@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -e
 
+# 1. Build Vite frontend
 cd frontend
 npm install
 npm run build
 
-# Adjust hardcoded localhost to relative /api or custom VITE_API_BASE_URL for production
+# 2. Adjust hardcoded localhost to relative /api or custom VITE_API_BASE_URL for production
 node -e "
 const fs = require('fs');
 const dir = 'dist/assets';
@@ -17,3 +18,10 @@ if (fs.existsSync(dir)) {
   });
 }
 "
+cd ..
+
+# 3. Populate root public/ directory so Vercel CDN serves static assets directly
+rm -rf public
+mkdir -p public
+cp -r frontend/dist/* public/
+echo "Static frontend ready in public/ for CDN distribution."

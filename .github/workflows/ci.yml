@@ -51,4 +51,5 @@ jobs:
       - name: Verify Built Assets
         run: |
           test -f frontend/dist/index.html
+          test -f public/index.html
           echo "Frontend build artifacts verified successfully!"
