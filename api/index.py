@@ -7,25 +7,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-# Add project root to sys.path so 'src' can be resolved by Python runtime
-root_dir = Path(__file__).resolve().parent.parent
-if str(root_dir) not in sys.path:
-    sys.path.insert(0, str(root_dir))
-
+# Ensure api directory and project root are in sys.path
 api_dir = Path(__file__).resolve().parent
+root_dir = api_dir.parent
 
-# Ensure dataset_dir and model_dir point to available paths (root or api bundle)
-from src.core.config import settings
-
-for candidate in [api_dir, root_dir]:
-    if (candidate / "dataset" / "train.csv").exists():
-        object.__setattr__(settings, "dataset_dir", candidate / "dataset")
-        break
-
-for candidate in [api_dir, root_dir]:
-    if (candidate / "model" / "tuned_xgboost_model.json").exists():
-        object.__setattr__(settings, "model_dir", candidate / "model")
-        break
+for candidate in [str(api_dir), str(root_dir)]:
+    if candidate not in sys.path:
+        sys.path.insert(0, candidate)
 
 # Top-level FastAPI instance explicitly defined for Vercel runtime detection
 app = FastAPI(
@@ -42,30 +30,49 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Safely initialize settings and point to bundled or root data directories
+init_error = None
+try:
+    from src.core.config import settings
+
+    for candidate in [api_dir, root_dir]:
+        if (candidate / "dataset" / "train.csv").exists():
+            object.__setattr__(settings, "dataset_dir", candidate / "dataset")
+            break
+
+    for candidate in [api_dir, root_dir]:
+        if (candidate / "model" / "tuned_xgboost_model.json").exists():
+            object.__setattr__(settings, "model_dir", candidate / "model")
+            break
+except Exception as e:
+    init_error = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
+
 
 @app.get("/api/health")
 def health_check():
     """Diagnostic health check that reliably reports runtime status without crashing."""
-    diagnostics = {
-        "train_csv": str(settings.dataset_dir / "train.csv"),
-        "train_csv_found": (settings.dataset_dir / "train.csv").exists(),
-        "model_file": str(settings.model_dir / "tuned_xgboost_model.json"),
-        "model_file_found": (settings.model_dir / "tuned_xgboost_model.json").exists(),
-        "gemini_api_key_configured": bool(settings.gemini_api_key),
-    }
-
-    try:
-        import xgboost
-        diagnostics["xgboost_version"] = getattr(xgboost, "__version__", "loaded")
-    except Exception as e:
-        diagnostics["xgboost_error"] = str(e)
-
-    return {
-        "status": "healthy" if diagnostics.get("train_csv_found") else "degraded",
+    health_data = {
+        "status": "healthy" if init_error is None else "degraded",
         "version": "0.1.0",
-        "engines": ["SQL/Data (Ranking)", "Statistics (Trend)", "XGBoost (Forecast)"],
-        "diagnostics": diagnostics,
+        "init_error": init_error,
+        "python_version": sys.version,
+        "api_dir": str(api_dir),
+        "api_contents": [p.name for p in api_dir.iterdir()] if api_dir.exists() else [],
     }
+
+    if init_error is None:
+        health_data["train_csv_found"] = (settings.dataset_dir / "train.csv").exists()
+        health_data["train_csv_path"] = str(settings.dataset_dir / "train.csv")
+        health_data["model_file_found"] = (settings.model_dir / "tuned_xgboost_model.json").exists()
+        health_data["model_file_path"] = str(settings.model_dir / "tuned_xgboost_model.json")
+        health_data["gemini_api_key_configured"] = bool(settings.gemini_api_key)
+        try:
+            import xgboost
+            health_data["xgboost_version"] = getattr(xgboost, "__version__", "loaded")
+        except Exception as e:
+            health_data["xgboost_error"] = str(e)
+
+    return health_data
 
 
 class QueryRequest(BaseModel):
@@ -79,6 +86,8 @@ _pipeline = None
 def get_pipeline():
     global _pipeline
     if _pipeline is None:
+        if init_error is not None:
+            raise RuntimeError(f"Config init failed:\n{init_error}")
         from src.pipeline import StockAIPipeline
         _pipeline = StockAIPipeline()
     return _pipeline
