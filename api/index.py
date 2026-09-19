@@ -1,35 +1,30 @@
 """Vercel serverless function entrypoint for Stock AI FastAPI backend."""
 
 import sys
-import traceback
 from pathlib import Path
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 # Add project root to sys.path so 'src' can be resolved by Python runtime
 root_dir = Path(__file__).resolve().parent.parent
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
-try:
-    from src.api.app import app
-except Exception as e:
-    from fastapi import FastAPI
-    from fastapi.responses import JSONResponse
+from src.api.routes import router
 
-    err_trace = traceback.format_exc()
-    print(f"Error initializing Stock AI app: {err_trace}", file=sys.stderr)
+# Top-level FastAPI instance explicitly defined for Vercel runtime detection
+app = FastAPI(
+    title="Stock AI API",
+    description="Two-Stage LLM Analytics Architecture for Retail Sales & Demand Forecasting",
+    version="0.1.0",
+)
 
-    app = FastAPI(title="Stock AI API (Error Fallback)")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
-    async def fallback_handler(path: str):
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": "Backend initialization error",
-                "detail": str(e),
-                "trace": err_trace,
-            },
-        )
-
-# Export FastAPI app instance for Vercel ASGI runner
-__all__ = ["app"]
+app.include_router(router)
