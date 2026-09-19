@@ -1,0 +1,19 @@
+# Python virtual environments and caches
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+
+# Git & OS artifacts
+.git
+.DS_Store
+
+# Local node dependencies (installed afresh during build)
+node_modules
+frontend/node_modules
+
+# Tests, docs, and notebook scratch artifacts
+tests
+docs
+*.ipynb
+dataset/working

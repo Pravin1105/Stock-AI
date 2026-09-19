@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "buildCommand": "cd frontend && npm install && npm run build && node -e \"const fs=require('fs'),dir='dist/assets';fs.readdirSync(dir).filter(f=>f.endsWith('.js')).forEach(f=>{const p=dir+'/'+f;fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace(/http:\\/\\/127\\.0\\.0\\.1:8000/g,process.env.VITE_API_BASE_URL||''));})\"",
+  "outputDirectory": "frontend/dist",
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
