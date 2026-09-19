@@ -1,22 +1,11 @@
 {
   "version": 2,
-  "framework": "vite",
   "buildCommand": "bash build.sh",
   "outputDirectory": "public",
-  "functions": {
-    "api/index.py": {
-      "includeFiles": "{dataset/train.csv,model/tuned_xgboost_model.json}",
-      "maxDuration": 60
-    }
-  },
   "rewrites": [
     {
       "source": "/api/(.*)",
       "destination": "/api/index.py"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
     }
   ]
 }
