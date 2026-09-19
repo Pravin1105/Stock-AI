@@ -25,3 +25,9 @@ rm -rf public
 mkdir -p public
 cp -r frontend/dist/* public/
 echo "Static frontend ready in public/ for CDN distribution."
+
+# 4. Copy dataset and model into api/ so Vercel bundles them into the serverless function
+mkdir -p api/dataset api/model
+cp dataset/train.csv api/dataset/
+cp model/tuned_xgboost_model.json api/model/
+echo "Bundled dataset and model into api/ for serverless availability."
