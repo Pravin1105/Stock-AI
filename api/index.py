@@ -58,6 +58,7 @@ except Exception as e:
 
 @app.get("/api/health")
 @app.get("/health")
+@app.get("/api/index.py")
 def health_check():
     """Diagnostic health check that reliably reports runtime status without crashing."""
     health_data = {
@@ -104,6 +105,7 @@ def get_pipeline():
 
 @app.post("/api/query")
 @app.post("/query")
+@app.post("/api/index.py")
 def execute_query(req: QueryRequest):
     """Execute query with full exception capturing and error reporting."""
     clean_query = req.query.strip()
