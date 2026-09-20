@@ -70,13 +70,28 @@ class GeminiExplainer(BaseExplainer):
             config = types.GenerateContentConfig(
                 system_instruction=EXPLANATION_SYSTEM_PROMPT,
                 temperature=0.3,
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
             )
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=config,
-            )
-            return response.text.strip() if response.text else "No explanation generated."
+            candidate_models = [self.model]
+            for fallback_m in ["gemini-2.0-flash", "gemini-1.5-flash"]:
+                if fallback_m not in candidate_models:
+                    candidate_models.append(fallback_m)
+
+            for m in candidate_models:
+                try:
+                    response = self.client.models.generate_content(
+                        model=m,
+                        contents=prompt,
+                        config=config,
+                    )
+                    if response.text:
+                        return response.text.strip()
+                except Exception:
+                    continue
+
+            # If all model attempts returned empty, use fallback
+            fallback = TemplateExplainer()
+            return fallback.explain(result)
         except Exception as err:
             # Fallback to deterministic template in case of network or API error
             fallback = TemplateExplainer()
