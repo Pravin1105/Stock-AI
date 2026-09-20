@@ -19,6 +19,49 @@ for candidate in [
     if candidate not in sys.path and Path(candidate).exists():
         sys.path.insert(0, candidate)
 
+# Inject lightweight in-memory scipy stub to satisfy xgboost's top-level
+# `import scipy.sparse` without requiring the heavy (150MB+) scipy binary.
+# Our forecast engine only uses xgb.Booster and xgb.DMatrix with pandas DataFrames.
+try:
+    import scipy  # noqa: F401
+except ImportError:
+    import types
+
+    scipy_mod = types.ModuleType("scipy")
+    scipy_mod.__path__ = ["<stub>"]
+    scipy_mod.__package__ = "scipy"
+
+    sparse_mod = types.ModuleType("scipy.sparse")
+    sparse_mod.__package__ = "scipy.sparse"
+    sparse_mod.__path__ = ["<stub>"]
+
+    class _StubSparseMatrix:
+        pass
+
+    sparse_mod.csr_matrix = _StubSparseMatrix
+    sparse_mod.csc_matrix = _StubSparseMatrix
+    sparse_mod.coo_matrix = _StubSparseMatrix
+    sparse_mod.csr_array = _StubSparseMatrix
+    sparse_mod.csc_array = _StubSparseMatrix
+    sparse_mod.coo_array = _StubSparseMatrix
+    sparse_mod.issparse = lambda x: False
+    sparse_mod.isspmatrix = lambda x: False
+    sparse_mod.isspmatrix_csr = lambda x: False
+    sparse_mod.isspmatrix_csc = lambda x: False
+    sparse_mod.vstack = lambda *a, **k: None
+
+    scipy_mod.sparse = sparse_mod
+
+    special_mod = types.ModuleType("scipy.special")
+    special_mod.__package__ = "scipy.special"
+    special_mod.softmax = lambda x, **k: None
+    special_mod.expit = lambda x: None
+    scipy_mod.special = special_mod
+
+    sys.modules["scipy"] = scipy_mod
+    sys.modules["scipy.sparse"] = sparse_mod
+    sys.modules["scipy.special"] = special_mod
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field

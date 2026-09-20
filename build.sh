@@ -119,6 +119,44 @@ else
     echo "Warning: scipy not found at $SITE_PACKAGES/scipy – skipping stub replacement."
 fi
 
+# Also place the scipy stub directly into api/_vendor/scipy and _vendor/scipy
+# so regardless of which python runtime path resolution is used, 'import scipy' succeeds
+for target in "api/_vendor/scipy" "_vendor/scipy"; do
+    mkdir -p "$target/sparse" "$target/special"
+    cat > "$target/__init__.py" << 'STUBEOF'
+"""Minimal scipy stub – satisfies xgboost import without the full package."""
+from . import sparse
+STUBEOF
+    cat > "$target/sparse/__init__.py" << 'STUBEOF'
+class csr_matrix:
+    pass
+class csc_matrix:
+    pass
+class coo_matrix:
+    pass
+csr_array = csr_matrix
+csc_array = csc_matrix
+coo_array = coo_matrix
+def issparse(x):
+    return False
+def isspmatrix(x):
+    return False
+def isspmatrix_csr(x):
+    return False
+def isspmatrix_csc(x):
+    return False
+def vstack(*a, **kw):
+    return None
+STUBEOF
+    cat > "$target/special/__init__.py" << 'STUBEOF'
+def softmax(x, axis=None):
+    return None
+def expit(x):
+    return None
+STUBEOF
+done
+echo "Vendored in-bundle scipy stub in api/_vendor/scipy and _vendor/scipy."
+
 # 7. Strip test, doc, and benchmark suites from site-packages to reclaim another 30-40 MB
 if [ -n "$SITE_PACKAGES" ] && [ -d "$SITE_PACKAGES" ]; then
     echo "Stripping test suites and docs from site-packages..."
