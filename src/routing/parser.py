@@ -70,36 +70,47 @@ class GeminiQueryParser(BaseQueryParser):
         if not clean_query:
             raise ValueError("Query string cannot be empty.")
 
-        try:
-            config = types.GenerateContentConfig(
-                system_instruction=QUERY_PARSER_SYSTEM_PROMPT,
-                response_mime_type="application/json",
-                response_schema=StructuredIntent,
-                temperature=0.0,
-            )
+        config = types.GenerateContentConfig(
+            system_instruction=QUERY_PARSER_SYSTEM_PROMPT,
+            response_mime_type="application/json",
+            response_schema=StructuredIntent,
+            temperature=0.0,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+        )
 
-            prompt = f"Extract structured intent and scope for this user query:\n\n{clean_query}"
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=config,
-            )
+        prompt = f"Extract structured intent and scope for this user query:\n\n{clean_query}"
+        candidate_models = [self.model]
+        for fallback_m in ["gemini-2.0-flash", "gemini-1.5-flash"]:
+            if fallback_m not in candidate_models:
+                candidate_models.append(fallback_m)
 
-            if not response.text:
-                raise QueryParserError("Empty response received from Gemini API.")
+        last_error: Optional[Exception] = None
+        for m in candidate_models:
+            try:
+                response = self.client.models.generate_content(
+                    model=m,
+                    contents=prompt,
+                    config=config,
+                )
 
-            # Validate and instantiate schema
-            intent = StructuredIntent.model_validate_json(response.text)
-            # Ensure raw_query matches the actual input
-            intent.raw_query = clean_query
-            return intent
+                if not response.text:
+                    continue
 
-        except ValidationError as val_err:
-            raise QueryParserError(
-                f"Model response failed schema validation: {val_err}"
-            ) from val_err
-        except Exception as err:
-            raise QueryParserError(f"Gemini Query Parser error: {err}") from err
+                try:
+                    intent = StructuredIntent.model_validate_json(response.text)
+                    intent.raw_query = clean_query
+                    return intent
+                except ValidationError as val_err:
+                    raise QueryParserError(
+                        f"Model response failed schema validation: {val_err}"
+                    ) from val_err
+            except QueryParserError:
+                raise
+            except Exception as err:
+                last_error = err
+                continue
+
+        raise QueryParserError(f"Gemini Query Parser error: {last_error}")
 
 
 class RuleBasedQueryParser(BaseQueryParser):

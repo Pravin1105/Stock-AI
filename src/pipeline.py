@@ -70,13 +70,19 @@ class StockAIPipeline:
         Returns:
             PipelineResponse object with intent, tabular result, and narrative explanation.
         """
-        # Step 1: Parse Intent (LLM 1)
-        intent = self.parser.parse(query)
+        # Step 1: Parse Intent (LLM 1 with deterministic fallback)
+        try:
+            intent = self.parser.parse(query)
+        except Exception as parse_err:
+            fallback_parser = RuleBasedQueryParser()
+            intent = fallback_parser.parse(query)
+            if not intent.explanation:
+                intent.explanation = f"Routed via rule-based fallback due to parser error: {parse_err}"
 
         # Step 2: Deterministic Retrieval / Analytics Engine
         result = self.dispatcher.execute(intent)
 
-        # Step 3: Explanation & Synthesis (LLM 2)
+        # Step 3: Explanation & Synthesis (LLM 2 with template fallback)
         explanation = self.explainer.explain(result)
 
         return PipelineResponse(
