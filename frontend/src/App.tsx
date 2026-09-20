@@ -139,13 +139,14 @@ export const App: React.FC = () => {
         })
       );
     } catch (err: any) {
+      const errorDetail = err?.message || String(err);
       const errorMessage: ChatMessage = {
         id: 'msg-' + Date.now(),
         sender: 'assistant',
         timestamp: new Date().toISOString(),
-        text: 'An error occurred while processing your request. Please check the backend connection or query format.',
+        text: `Error processing query: ${errorDetail}`,
         isLoading: false,
-        error: String(err),
+        error: errorDetail,
       };
 
       setConversations((prev) =>
