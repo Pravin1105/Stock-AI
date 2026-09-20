@@ -4,7 +4,8 @@
   "outputDirectory": "public",
   "functions": {
     "api/index.py": {
-      "maxDuration": 60
+      "maxDuration": 60,
+      "excludeFiles": "{frontend/**,dataset/working/**,dataset/test.csv,dataset/sample_submission.csv,tests/**,docs/**,*.ipynb,*.md,scratch/**}"
     }
   },
   "rewrites": [
