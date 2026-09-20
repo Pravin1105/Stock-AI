@@ -36,8 +36,8 @@ cp -r src api/src
 find api/src -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 echo "Bundled requirements, dataset, model, and src into api/ for serverless availability."
 
-# 5. Clean up frontend build artifacts and caches to ensure serverless bundle remains well under 500 MB limit
-rm -rf frontend/node_modules frontend/dist
+# 5. Clean up heavy frontend node_modules and dataset working cache (frontend/dist is only ~200KB and preserved)
+rm -rf frontend/node_modules
 rm -rf dataset/working
 echo "Pruned frontend/node_modules and build caches to optimize bundle size."
 
