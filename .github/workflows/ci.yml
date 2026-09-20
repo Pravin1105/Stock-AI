@@ -52,4 +52,5 @@ jobs:
         run: |
           test -f frontend/dist/index.html
           test -f public/index.html
+          test -f api/static/index.html
           echo "Frontend build artifacts verified successfully!"

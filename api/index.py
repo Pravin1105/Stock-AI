@@ -64,7 +64,8 @@ except ImportError:
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 # Top-level FastAPI instance explicitly defined for Vercel runtime detection
@@ -81,6 +82,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount frontend static assets directory if available
+static_dir = api_dir / "static"
+if not static_dir.exists():
+    static_dir = root_dir / "public"
+if not static_dir.exists():
+    static_dir = root_dir / "frontend" / "dist"
+
+if (static_dir / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
 
 # Safely initialize settings and point to bundled or root data directories
 init_error = None
@@ -101,9 +112,12 @@ except Exception as e:
 
 
 @app.get("/")
+@app.get("/index.html")
 def serve_root():
     """Serves compiled frontend index.html if request is routed to FastAPI."""
     for candidate in [
+        static_dir / "index.html",
+        api_dir / "static" / "index.html",
         root_dir / "public" / "index.html",
         api_dir / "public" / "index.html",
         root_dir / "frontend" / "dist" / "index.html",
@@ -111,6 +125,14 @@ def serve_root():
         if candidate.exists():
             return FileResponse(str(candidate))
     return {"message": "Stock AI API is running. Visit /docs for API documentation.", "status": "ok"}
+ 
+ 
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    candidate = static_dir / "favicon.ico"
+    if candidate.exists():
+        return FileResponse(str(candidate))
+    return Response(status_code=204)
 
 
 @app.get("/api/health")

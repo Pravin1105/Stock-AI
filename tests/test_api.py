@@ -49,3 +49,16 @@ def test_query_empty_string_fails():
     """Verify empty query returns 400 Bad Request."""
     response = client.post("/api/query", json={"query": "   "})
     assert response.status_code == 400
+
+
+def test_vercel_entrypoint_routes():
+    """Verify api/index.py routes for root and health check."""
+    from api.index import app as vercel_app
+
+    vercel_client = TestClient(vercel_app)
+    res_root = vercel_client.get("/")
+    assert res_root.status_code == 200
+    res_health = vercel_client.get("/api/health")
+    assert res_health.status_code == 200
+    assert res_health.json()["status"] == "healthy"
+
