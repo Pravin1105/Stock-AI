@@ -7,6 +7,10 @@ python-dotenv>=1.0.0
 fastapi>=0.100.0
 uvicorn[standard]>=0.22.0
 
+# Testing and Code Quality
+pytest>=7.0.0
+httpx>=0.24.0
+
 # Analytics Engine
 pandas>=2.0.0
 numpy>=1.23.0
