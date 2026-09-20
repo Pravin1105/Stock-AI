@@ -64,6 +64,7 @@ except ImportError:
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 # Top-level FastAPI instance explicitly defined for Vercel runtime detection
@@ -97,6 +98,19 @@ try:
             break
 except Exception as e:
     init_error = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
+
+
+@app.get("/")
+def serve_root():
+    """Serves compiled frontend index.html if request is routed to FastAPI."""
+    for candidate in [
+        root_dir / "public" / "index.html",
+        api_dir / "public" / "index.html",
+        root_dir / "frontend" / "dist" / "index.html",
+    ]:
+        if candidate.exists():
+            return FileResponse(str(candidate))
+    return {"message": "Stock AI API is running. Visit /docs for API documentation.", "status": "ok"}
 
 
 @app.get("/api/health")
