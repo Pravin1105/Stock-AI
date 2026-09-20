@@ -40,3 +40,81 @@ echo "Bundled requirements, dataset, model, and src into api/ for serverless ava
 rm -rf frontend/node_modules frontend/dist
 rm -rf dataset/working
 echo "Pruned frontend/node_modules and build caches to optimize bundle size."
+
+# 6. Replace heavy scipy with a minimal stub to stay under Vercel's 500 MB bundle limit.
+#    uv already installed the real scipy (~150-200 MB on Linux) as a transitive dep of xgboost.
+#    Our code only uses xgb.Booster / xgb.DMatrix with pandas DataFrames (inference only),
+#    so the full scipy is never exercised. The stub satisfies xgboost's top-level
+#    `import scipy.sparse` without the compiled linear algebra libraries.
+SITE_PACKAGES=$(python3 -c "import site; print(site.getsitepackages()[0])" 2>/dev/null || echo "")
+if [ -z "$SITE_PACKAGES" ] || [ ! -d "$SITE_PACKAGES" ]; then
+    # Fallback: locate scipy and derive site-packages from it
+    SITE_PACKAGES=$(python3 -c "import scipy, os; print(os.path.dirname(os.path.dirname(scipy.__file__)))" 2>/dev/null || echo "")
+fi
+if [ -z "$SITE_PACKAGES" ] || [ ! -d "$SITE_PACKAGES" ]; then
+    # Vercel-specific fallback
+    for d in /vercel/path0/.vercel/python/.venv/lib/python*/site-packages; do
+        [ -d "$d" ] && SITE_PACKAGES="$d" && break
+    done
+fi
+
+if [ -n "$SITE_PACKAGES" ] && [ -d "$SITE_PACKAGES/scipy" ]; then
+    SCIPY_SIZE=$(du -sm "$SITE_PACKAGES/scipy" 2>/dev/null | cut -f1)
+    echo "Replacing scipy (${SCIPY_SIZE:-?} MB) with minimal stub..."
+
+    rm -rf "$SITE_PACKAGES/scipy" "$SITE_PACKAGES/scipy.libs" "$SITE_PACKAGES"/scipy-*.dist-info
+
+    # -- scipy/__init__.py --
+    mkdir -p "$SITE_PACKAGES/scipy/sparse"
+    cat > "$SITE_PACKAGES/scipy/__init__.py" << 'STUBEOF'
+"""Minimal scipy stub – satisfies xgboost import without the full package."""
+from . import sparse
+STUBEOF
+
+    # -- scipy/sparse/__init__.py --
+    cat > "$SITE_PACKAGES/scipy/sparse/__init__.py" << 'STUBEOF'
+"""Stub scipy.sparse providing the classes/functions xgboost references."""
+
+class csr_matrix:
+    pass
+
+class csc_matrix:
+    pass
+
+class coo_matrix:
+    pass
+
+csr_array = csr_matrix
+csc_array = csc_matrix
+coo_array = coo_matrix
+
+def issparse(x):
+    return False
+
+def isspmatrix(x):
+    return False
+
+def isspmatrix_csr(x):
+    return False
+
+def isspmatrix_csc(x):
+    return False
+
+def vstack(*a, **kw):
+    raise NotImplementedError("scipy.sparse.vstack stub – not available in production")
+STUBEOF
+
+    # -- scipy/special/__init__.py  (xgboost/sklearn.py imports softmax/expit) --
+    mkdir -p "$SITE_PACKAGES/scipy/special"
+    cat > "$SITE_PACKAGES/scipy/special/__init__.py" << 'STUBEOF'
+"""Stub scipy.special – only needed if xgboost sklearn wrapper is loaded."""
+def softmax(x, axis=None):
+    raise NotImplementedError("scipy.special.softmax stub")
+def expit(x):
+    raise NotImplementedError("scipy.special.expit stub")
+STUBEOF
+
+    echo "scipy stub installed successfully (saved ~${SCIPY_SIZE:-150} MB)."
+else
+    echo "Warning: scipy not found at $SITE_PACKAGES/scipy – skipping stub replacement."
+fi
