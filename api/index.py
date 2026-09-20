@@ -1,19 +1,27 @@
 """Vercel serverless function entrypoint for Stock AI FastAPI backend."""
 
+import os
 import sys
 import traceback
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
 
-# Ensure api directory and project root are in sys.path
+# Ensure api directory, project root, and any vendored packages are in sys.path BEFORE importing dependencies
 api_dir = Path(__file__).resolve().parent
 root_dir = api_dir.parent
 
-for candidate in [str(api_dir), str(root_dir)]:
-    if candidate not in sys.path:
+for candidate in [
+    str(api_dir),
+    str(root_dir),
+    str(api_dir / "_vendor"),
+    str(root_dir / "_vendor"),
+    str(api_dir / "src"),
+]:
+    if candidate not in sys.path and Path(candidate).exists():
         sys.path.insert(0, candidate)
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
 # Top-level FastAPI instance explicitly defined for Vercel runtime detection
 app = FastAPI(
