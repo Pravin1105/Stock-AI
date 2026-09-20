@@ -10,4 +10,4 @@ uvicorn>=0.22.0
 # Analytics Engine
 pandas>=2.0.0
 numpy>=1.23.0
-xgboost>=1.7.0
+xgboost-cpu>=1.7.0

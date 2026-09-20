@@ -118,3 +118,10 @@ STUBEOF
 else
     echo "Warning: scipy not found at $SITE_PACKAGES/scipy – skipping stub replacement."
 fi
+
+# 7. Strip test, doc, and benchmark suites from site-packages to reclaim another 30-40 MB
+if [ -n "$SITE_PACKAGES" ] && [ -d "$SITE_PACKAGES" ]; then
+    echo "Stripping test suites and docs from site-packages..."
+    find "$SITE_PACKAGES" -type d \( -name "tests" -o -name "test" -o -name "testing" -o -name "docs" -o -name "examples" -o -name "benchmarks" \) -exec rm -rf {} + 2>/dev/null || true
+    echo "Pruned test suites and docs from site-packages."
+fi
