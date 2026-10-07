@@ -33,6 +33,7 @@ class Settings:
     base_dir: Path = BASE_DIR
     dataset_dir: Path = BASE_DIR / "dataset"
     model_dir: Path = BASE_DIR / "model"
+    database_path: Path = Path(os.getenv("DATABASE_PATH", str(BASE_DIR / "dataset" / "stock_ai.db")))
 
 
 PROVIDER_METADATA = {

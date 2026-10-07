@@ -62,7 +62,7 @@ except ImportError:
     sys.modules["scipy.sparse"] = sparse_mod
     sys.modules["scipy.special"] = special_mod
 
-from typing import Optional
+from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
@@ -257,4 +257,99 @@ def execute_query(req: QueryRequest):
             status_code=500,
             detail=f"Backend execution error: {err_msg}",
         ) from err
+
+
+# --- v2.0 Ingestion Endpoints ---
+
+class SalesRecordItem(BaseModel):
+    date: str
+    store: int
+    item: int
+    sales: float
+
+
+class SalesBatchRequest(BaseModel):
+    records: List[SalesRecordItem]
+    mode: str = "upsert"
+
+
+class CsvPayloadRequest(BaseModel):
+    csv_data: str
+    mode: str = "upsert"
+
+
+@app.post("/api/ingest/csv")
+def ingest_csv_data(req: CsvPayloadRequest):
+    try:
+        from src.data.ingestion import DataIngestionPipeline
+        pipeline = DataIngestionPipeline()
+        summary = pipeline.ingest(req.csv_data, mode=req.mode)
+        if summary.status == "failed":
+            raise HTTPException(status_code=400, detail={"message": "CSV ingestion failed", "summary": summary.to_dict()})
+        return summary.to_dict()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.post("/api/ingest/sales")
+def ingest_sales_batch(req: SalesBatchRequest):
+    try:
+        from src.data.ingestion import DataIngestionPipeline
+        import pandas as pd
+        if not req.records:
+            raise HTTPException(status_code=400, detail="Records list cannot be empty.")
+        records_data = [r.model_dump() for r in req.records]
+        df = pd.DataFrame(records_data)
+        pipeline = DataIngestionPipeline()
+        summary = pipeline.ingest(df, mode=req.mode)
+        if summary.status == "failed":
+            raise HTTPException(status_code=400, detail={"message": "Sales ingestion failed", "summary": summary.to_dict()})
+        return summary.to_dict()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+# --- v2.0 Training Endpoints ---
+
+class RetrainRequest(BaseModel):
+    holdout_days: int = 90
+    n_estimators: int = 60
+    max_depth: int = 6
+    learning_rate: float = 0.08
+    tolerance_pct: float = 0.0
+    background: bool = True
+
+
+@app.post("/api/train/retrain")
+def trigger_retraining(req: RetrainRequest = RetrainRequest()):
+    try:
+        from src.training.scheduler import TrainingScheduler
+        scheduler = TrainingScheduler.get_instance()
+        return scheduler.trigger_job(
+            background=req.background,
+            holdout_days=req.holdout_days,
+            n_estimators=req.n_estimators,
+            max_depth=req.max_depth,
+            learning_rate=req.learning_rate,
+            tolerance_pct=req.tolerance_pct,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.get("/api/train/status")
+def get_training_status():
+    from src.training.scheduler import TrainingScheduler
+    return TrainingScheduler.get_instance().get_status()
+
+
+@app.get("/api/train/models")
+def list_registered_models():
+    from src.training.registry import ModelRegistry
+    registry = ModelRegistry.get_instance()
+    return {
+        "active_version": registry.get_active_version(),
+        "models": registry.list_models(),
+    }
+
 

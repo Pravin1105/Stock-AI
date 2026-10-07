@@ -1,12 +1,13 @@
-# Stock AI — Two-Stage LLM Analytics & Demand Forecasting (v1.0)
+# Stock AI — Two-Stage LLM Analytics & Demand Forecasting (v1.0 & v2.0)
 
 Stock AI is an enterprise conversational retail analytics and inventory demand forecasting platform. It employs a **Two-Stage LLM Architecture** (Intent-to-Execution pattern) that completely eliminates mathematical hallucinations by strictly grounding all figures, rankings, and forecasts in deterministic SQL aggregations, statistical algorithms, and a trained gradient-boosted XGBoost machine learning model.
 
-Version **1.0** introduces **Multi-Provider LLM Model Selection** and **Bring Your Own Key (BYOK)** support across **Google Gemini**, **OpenAI**, **Anthropic Claude**, and **Groq** with minimal external dependencies.
+- **Version 1.0**: Introduces **Multi-Provider LLM Model Selection** and **Bring Your Own Key (BYOK)** support across **Google Gemini**, **OpenAI**, **Anthropic Claude**, and **Groq** with minimal external dependencies.
+- **Version 2.0**: Introduces **Continuous Data Ingestion** and **Independent Model Retraining Pipelines**, establishing the central database as the single source of truth while completely decoupling data ingestion from model training.
 
 ---
 
-## 1. System Architecture
+## 1. System Architecture (v1.0)
 
 ```text
                              USER QUERY
@@ -82,27 +83,100 @@ Version **1.0** introduces **Multi-Provider LLM Model Selection** and **Bring Yo
 
 ---
 
-## 3. Project Structure
+## 3. Stock AI v2.0 Architecture — Continuous Data Ingestion & Independent Model Retraining
+
+Version **2.0** evolves Stock AI from a static, one-time ML application into a production-grade system that continuously receives new sales data and periodically updates its forecasting models.
+
+### Core Architectural Principle
+
+> **The database becomes the central source of truth, while data ingestion and model training remain completely independent pipelines.**
+
+```text
+Data Ingestion (CSV / Sales Entry / POS) ──> Central Database <── Model Retraining (Scheduler / Job)
+                                                   │
+                                                   ▼
+                                       Instant Analytics Visibility
+                                      (Rankings, Trends, Summaries)
+```
+
+### Why Separate the Pipelines?
+This architectural separation prevents the severe bottleneck of blocking HTTP upload requests on heavy training compute:
+```text
+[Anti-Pattern Avoided]:  CSV Upload ──> Train Model (Slow) ──> Wait ──> HTTP Response
+[v2.0 Decoupled Design]:
+      Data Ingestion (Fast <1s)        Independent Retraining (Background Job)
+               ↓                                     ↓
+            Database ◄───────────────────────────────┘
+```
+
+### 1. Data Ingestion Pipeline (`src/data/ingestion.py`)
+- **Fast, Non-Blocking Ingestion**: Data uploads validate, deduplicate, and write directly to the database in milliseconds without triggering model training.
+- **Validation & Cleaning**:
+  - Requires standard retail columns: `date`, `store`, `item`, `sales`.
+  - Enforces type validity: `store > 0`, `item > 0`, `sales >= 0`, ISO date strings (`YYYY-MM-DD`).
+  - Drops corrupted or unparseable records and reports granular validation statistics.
+- **In-Batch & Database Deduplication**:
+  - Automatically identifies in-batch duplicates on `(store, item, date)`, preserving the most recent record.
+  - Enforces relational uniqueness (`PRIMARY KEY (store, item, date)`) with configurable `upsert` or `ignore` modes.
+- **Immediate Analytics Visibility**:
+  - Calls `DataRepository.invalidate_cache()` upon successful write.
+  - Newly ingested sales records are instantly reflected in SQL queries, trend calculations, and ranking analyses without needing model retraining.
+
+### 2. Independent Model Retraining Pipeline (`src/training/`)
+- **Scheduler & Asynchronous Coordination (`scheduler.py`)**:
+  - Retraining operates independently on a periodic schedule or via on-demand trigger (`POST /api/train/retrain`).
+  - Thread-safe mutex lock ensures only one training job can execute at any time.
+- **Dynamic Feature Engineering (`features.py`)**:
+  - Reads accumulated historical sales from the database.
+  - Automatically computes calendar features (`day`, `month`, `year`, `dayofweek`, `weekofyear`), historical store-item summary metrics (`sales_mean`, `sales_median`, `sales_std`), and lag features (`lag_7`, `lag_14`, `lag_28`, `lag_365`).
+- **Temporal Train/Holdout Splitting**:
+  - Splits data strictly along time boundaries (e.g. 90-day holdout) to ensure realistic out-of-time evaluation.
+- **Champion vs. Challenger Governance (`evaluator.py`)**:
+  - Trains candidate XGBoost booster (Challenger).
+  - Evaluates both candidate and incumbent champion model on the exact same holdout window.
+  - Computes comprehensive accuracy metrics: `SMAPE`, `MAE`, `RMSE`, `WAPE`.
+  - **Auto-Promotion Rule**: If the candidate beats or matches the incumbent champion within acceptable tolerance, it is promoted. If it performs worse, it is rejected and archived with the decision reason.
+- **Versioned Model Registry (`registry.py`)**:
+  - Maintains model versions in `model/versions/` and full audit trails in `model/registry.json`.
+  - Automatically updates the active champion pointer so `ForecastEngine` hot-reloads the active model without restarting the server.
+
+### 3. Future Evolution Stages
+- **Stage 1 (Implemented):** CSV → Central Database (`POST /api/ingest/csv`).
+- **Stage 2 (Implemented):** Scheduler → Independent Retraining → Model Registry (`POST /api/train/retrain`, `GET /api/train/models`).
+- **Stage 3 & 4 (Implemented backend contracts):** Direct Sales Batch Entry (`POST /api/ingest/sales`) → Central Database → Scheduled Retraining.
+- **Stage 5:** Automated external data connectors (streaming/POS/APIs) feeding directly into the database.
+
+---
+
+## 4. Project Structure
 
 ```text
 StockAI/
 ├── src/
 │   ├── api/
 │   │   ├── app.py            # FastAPI factory with static asset mounting
-│   │   └── routes.py         # /api/query, /api/models, /api/health endpoints
+│   │   └── routes.py         # Analytical queries, v2 ingestion & retraining endpoints
 │   ├── core/
-│   │   ├── config.py         # Multi-provider configs, defaults & metadata
+│   │   ├── config.py         # Multi-provider configs, paths & database settings
 │   │   └── llm_client.py     # Lightweight unified HTTP client (Gemini/OpenAI/Claude/Groq)
+│   ├── data/
+│   │   ├── database.py       # [v2.0] SQLite DatabaseManager with WAL mode & indexes
+│   │   ├── ingestion.py      # [v2.0] DataIngestionPipeline (validation, cleaning, deduplication)
+│   │   └── repository.py     # Database-backed sales data access & cache invalidation
+│   ├── training/             # [v2.0] Independent Model Training Pipeline
+│   │   ├── features.py       # Dynamic feature engineering & temporal holdout splitting
+│   │   ├── evaluator.py      # SMAPE/MAE/RMSE/WAPE & Champion vs. Challenger comparison
+│   │   ├── registry.py       # ModelRegistry versioning & active champion pointer
+│   │   ├── trainer.py        # ModelTrainer executing XGBoost retraining & evaluation
+│   │   └── scheduler.py      # TrainingScheduler coordinating async background jobs
 │   ├── schemas/
 │   │   ├── intent.py         # StructuredIntent, QueryScope, IntentTask schemas
 │   │   └── results.py        # UnifiedResult, SummaryMetrics schemas
-│   ├── data/
-│   │   └── repository.py     # Data access layer over 5-year sales dataset
 │   ├── analytics/
 │   │   ├── base.py           # BaseAnalyticsEngine abstraction
 │   │   ├── ranking.py        # SQL/Data aggregation and ranking engine
 │   │   ├── trend.py          # Time-series trend and trajectory engine
-│   │   ├── forecast.py       # Trained XGBoost demand forecasting engine
+│   │   ├── forecast.py       # Dynamic XGBoost forecasting engine with registry hot-reloading
 │   │   └── router.py         # AnalyticsDispatcher routing engine
 │   ├── explanation/
 │   │   ├── prompts.py        # Numerical faithfulness system prompts
@@ -125,14 +199,15 @@ StockAI/
 │   └── vite.config.ts
 ├── api/                      # Vercel serverless function bundle entrypoint
 │   └── index.py
-├── tests/                    # 33 Automated unit and integration tests
+├── tests/                    # 42 Automated unit and integration tests
+│   ├── test_v2_pipelines.py  # [v2.0] Ingestion, database, evaluator & retraining tests
 │   ├── test_api.py           # API endpoints & BYOK routing tests
 │   ├── test_parser.py        # Multi-provider query parser tests
 │   ├── test_explanation.py   # Multi-provider explainer tests
 │   ├── test_analytics.py     # Ranking, trend, and forecast engine tests
 │   └── test_schemas.py       # Pydantic schema validation tests
-├── dataset/                  # Historical store-item sales dataset
-├── model/                    # Trained tuned_xgboost_model.json
+├── dataset/                  # Historical store-item sales dataset & central SQLite DB
+├── model/                    # Model registry, versions & tuned_xgboost_model.json
 ├── run_server.py             # Backend launcher script
 ├── build.sh                  # Vercel & production build orchestration
 └── requirements.txt          # Python dependencies
@@ -140,7 +215,7 @@ StockAI/
 
 ---
 
-## 4. Quick Start
+## 5. Quick Start
 
 ### A. Environment Setup
 
@@ -165,7 +240,7 @@ GROQ_API_KEY=your_groq_key
 EOF
 ```
 
-### B. Run Automated Test Suite (33 Tests)
+### B. Run Automated Test Suite (42 Tests)
 
 ```bash
 pytest -v
@@ -187,9 +262,11 @@ Open **`http://localhost:5173/`** (Vite dev) or **`http://127.0.0.1:8000/`** (Fa
 
 ---
 
-## 5. API Reference
+## 6. API Reference
 
-### `GET /api/models`
+### Conversational & Model Selection Endpoints
+
+#### `GET /api/models`
 Returns supported providers, available preset models, and server-key availability status.
 
 **Sample Response:**
@@ -225,7 +302,7 @@ Returns supported providers, available preset models, and server-key availabilit
 }
 ```
 
-### `POST /api/query`
+#### `POST /api/query`
 Executes natural-language analytical query with optional provider, model, and BYOK key.
 
 **Request Payload:**
@@ -240,5 +317,53 @@ Executes natural-language analytical query with optional provider, model, and BY
 
 ---
 
-## 6. License
+### v2.0 Data Ingestion Endpoints
+
+#### `POST /api/ingest/csv`
+Uploads raw CSV text to validate, clean, deduplicate, and insert into the central database.
+```json
+{
+  "csv_data": "date,store,item,sales\n2018-01-01,1,1,45.0\n2018-01-02,1,1,50.0",
+  "mode": "upsert"
+}
+```
+
+#### `POST /api/ingest/sales`
+Direct structured JSON sales batch ingestion (for POS & sales entry applications).
+```json
+{
+  "records": [
+    {"date": "2018-01-01", "store": 1, "item": 1, "sales": 45.0},
+    {"date": "2018-01-02", "store": 1, "item": 1, "sales": 50.0}
+  ],
+  "mode": "upsert"
+}
+```
+
+---
+
+### v2.0 Independent Retraining Endpoints
+
+#### `POST /api/train/retrain`
+Triggers an asynchronous or synchronous retraining job using accumulated database data.
+```json
+{
+  "holdout_days": 90,
+  "n_estimators": 60,
+  "max_depth": 6,
+  "learning_rate": 0.08,
+  "tolerance_pct": 0.0,
+  "background": true
+}
+```
+
+#### `GET /api/train/status`
+Returns the status, timing, and last evaluation outcome of model retraining jobs.
+
+#### `GET /api/train/models`
+Lists all model versions in the registry, their holdout evaluation metrics, and the currently active champion.
+
+---
+
+## 7. License
 MIT License.
