@@ -117,3 +117,96 @@ def execute_query(req: QueryRequest) -> QueryResponse:
             status_code=500, detail=f"Pipeline execution failed: {err}"
         ) from err
 
+
+# --- v2.0 Pipeline 1: Data Ingestion Pipeline ---
+
+class SalesRecordItem(BaseModel):
+    date: str
+    store: int
+    item: int
+    sales: float
+
+
+class SalesBatchRequest(BaseModel):
+    records: List[SalesRecordItem]
+    mode: str = Field(default="upsert", description="'upsert' or 'ignore'")
+
+
+class CsvPayloadRequest(BaseModel):
+    csv_data: str
+    mode: str = Field(default="upsert", description="'upsert' or 'ignore'")
+
+
+@router.post("/ingest/csv")
+def ingest_csv_data(req: CsvPayloadRequest):
+    """Ingest CSV data content into central database without triggering model training."""
+    from src.data.ingestion import DataIngestionPipeline
+    pipeline = DataIngestionPipeline()
+    summary = pipeline.ingest(req.csv_data, mode=req.mode)
+    if summary.status == "failed":
+        raise HTTPException(status_code=400, detail={"message": "CSV ingestion failed", "summary": summary.to_dict()})
+    return summary.to_dict()
+
+
+@router.post("/ingest/sales")
+def ingest_sales_batch(req: SalesBatchRequest):
+    """Ingest structured sales records into central database (Stage 3/4 sales-entry / POS)."""
+    from src.data.ingestion import DataIngestionPipeline
+    import pandas as pd
+    if not req.records:
+        raise HTTPException(status_code=400, detail="Records list cannot be empty.")
+
+    records_data = [r.model_dump() for r in req.records]
+    df = pd.DataFrame(records_data)
+    pipeline = DataIngestionPipeline()
+    summary = pipeline.ingest(df, mode=req.mode)
+    if summary.status == "failed":
+        raise HTTPException(status_code=400, detail={"message": "Sales ingestion failed", "summary": summary.to_dict()})
+    return summary.to_dict()
+
+
+# --- v2.0 Pipeline 2: Independent Model Training Pipeline ---
+
+class RetrainRequest(BaseModel):
+    holdout_days: int = Field(default=90, description="Holdout evaluation window in days.")
+    n_estimators: int = Field(default=60, description="Number of boosting rounds.")
+    max_depth: int = Field(default=6, description="Max tree depth.")
+    learning_rate: float = Field(default=0.08, description="Learning rate.")
+    tolerance_pct: float = Field(default=0.0, description="Max degradation percent allowed for candidate.")
+    background: bool = Field(default=True, description="Run as asynchronous background job.")
+
+
+@router.post("/train/retrain")
+def trigger_retraining(req: RetrainRequest = RetrainRequest()):
+    """Trigger independent model retraining, holdout evaluation, and champion-challenger promotion."""
+    from src.training.scheduler import TrainingScheduler
+    scheduler = TrainingScheduler.get_instance()
+    result = scheduler.trigger_job(
+        background=req.background,
+        holdout_days=req.holdout_days,
+        n_estimators=req.n_estimators,
+        max_depth=req.max_depth,
+        learning_rate=req.learning_rate,
+        tolerance_pct=req.tolerance_pct,
+    )
+    return result
+
+
+@router.get("/train/status")
+def get_training_status():
+    """Retrieve the current state and latest outcome of model retraining jobs."""
+    from src.training.scheduler import TrainingScheduler
+    scheduler = TrainingScheduler.get_instance()
+    return scheduler.get_status()
+
+
+@router.get("/train/models")
+def list_registered_models():
+    """List all registered forecasting models and the currently active champion."""
+    from src.training.registry import ModelRegistry
+    registry = ModelRegistry.get_instance()
+    return {
+        "active_version": registry.get_active_version(),
+        "models": registry.list_models(),
+    }
+

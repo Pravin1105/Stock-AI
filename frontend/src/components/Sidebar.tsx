@@ -131,9 +131,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
           <TrendingUp size={15} color="var(--accent)" />
-          Stock AI Engine v1.0
+          Stock AI Engine v2.0
         </div>
-        <div>Two-Stage LLM Analytics</div>
+        <div>Continuous ML & Analytics</div>
       </div>
     </aside>
   );

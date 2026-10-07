@@ -19,6 +19,9 @@ FEATURES = [
 ]
 
 
+from src.training.registry import ModelRegistry
+
+
 class ForecastEngine(BaseAnalyticsEngine):
     """Executes time-series demand forecasting using the trained XGBoost model."""
 
@@ -27,13 +30,21 @@ class ForecastEngine(BaseAnalyticsEngine):
         model_path: Optional[Path] = None,
         repository: Optional[DataRepository] = None,
     ) -> None:
-        self.model_path = model_path or (settings.model_dir / "tuned_xgboost_model.json")
+        self.registry = ModelRegistry.get_instance()
+        self.model_path = model_path or self.registry.get_active_model_path()
         if not self.model_path.exists():
             raise FileNotFoundError(f"Model file not found at: {self.model_path}")
 
         self.model = xgb.Booster()
         self.model.load_model(str(self.model_path))
         self.repo = repository or DataRepository.get_instance()
+
+    def reload_model(self) -> None:
+        """Reload the latest active champion model from registry."""
+        self.model_path = self.registry.get_active_model_path()
+        if self.model_path.exists():
+            self.model = xgb.Booster()
+            self.model.load_model(str(self.model_path))
 
     def execute(self, intent: StructuredIntent) -> UnifiedResult:
         if intent.task != IntentTask.FORECAST:

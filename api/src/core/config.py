@@ -10,6 +10,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 
+def _resolve_database_path() -> Path:
+    if os.getenv("DATABASE_PATH"):
+        return Path(os.environ["DATABASE_PATH"])
+    if os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME") or os.getenv("LAMBDA_TASK_ROOT"):
+        import tempfile
+        return Path(tempfile.gettempdir()) / "stock_ai.db"
+    return BASE_DIR / "dataset" / "stock_ai.db"
+
+
 @dataclass(frozen=True)
 class Settings:
     """Application settings and API configurations."""
@@ -33,6 +42,7 @@ class Settings:
     base_dir: Path = BASE_DIR
     dataset_dir: Path = BASE_DIR / "dataset"
     model_dir: Path = BASE_DIR / "model"
+    database_path: Path = _resolve_database_path()
 
 
 PROVIDER_METADATA = {

@@ -109,6 +109,9 @@ try:
         if (candidate / "model" / "tuned_xgboost_model.json").exists():
             object.__setattr__(settings, "model_dir", candidate / "model")
             break
+
+    import tempfile
+    object.__setattr__(settings, "database_path", Path(tempfile.gettempdir()) / "stock_ai.db")
 except Exception as e:
     init_error = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
 
