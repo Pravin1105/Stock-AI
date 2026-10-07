@@ -1,0 +1,24 @@
+{
+  "active_version": "v1.0.0",
+  "models": [
+    {
+      "version": "v1.0.0",
+      "status": "active_champion",
+      "model_path": "model/versions/v1.0.0.json",
+      "trained_at": "2026-09-17T22:26:00Z",
+      "promoted_at": "2026-09-17T22:26:00Z",
+      "metrics": {
+        "smape": 6.193,
+        "mae": 5.866,
+        "rmse": 7.619,
+        "wape": 10.738
+      },
+      "dataset_info": {
+        "source": "train.csv",
+        "rows": 913000,
+        "date_range": "2013-01-01 to 2017-12-31"
+      },
+      "notes": "Baseline tuned XGBoost from v1.0"
+    }
+  ]
+}

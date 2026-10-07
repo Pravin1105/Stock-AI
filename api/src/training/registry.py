@@ -1,6 +1,8 @@
 """Model Registry managing versions, performance metadata, and active deployment pointers."""
 
 import json
+import os
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -10,7 +12,10 @@ from src.core.config import settings
 
 
 class ModelRegistry:
-    """Manages versioned storage and active pointer for trained forecasting models."""
+    """Manages versioned storage and active pointer for trained forecasting models.
+
+    Resilient to read-only environments (e.g. AWS Lambda / Vercel Serverless Functions).
+    """
 
     _instance: Optional["ModelRegistry"] = None
 
@@ -20,8 +25,25 @@ class ModelRegistry:
         self.registry_file = self.model_dir / "registry.json"
         self.active_symlink_file = self.model_dir / "tuned_xgboost_model.json"
 
-        self.model_dir.mkdir(parents=True, exist_ok=True)
-        self.versions_dir.mkdir(parents=True, exist_ok=True)
+        self.is_writable: bool = False
+        self._in_memory_data: Optional[Dict[str, Any]] = None
+
+        # Verify whether model directory is writable; fallback gracefully in serverless read-only runtimes
+        try:
+            self.model_dir.mkdir(parents=True, exist_ok=True)
+            test_file = self.model_dir / f".write_test_{os.getpid()}"
+            test_file.touch()
+            test_file.unlink()
+            self.versions_dir.mkdir(parents=True, exist_ok=True)
+            self.is_writable = True
+        except (OSError, PermissionError):
+            self.is_writable = False
+            self.versions_dir = Path(tempfile.gettempdir()) / "model_versions"
+            try:
+                self.versions_dir.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
+
         self._ensure_initialized()
 
     @classmethod
@@ -35,18 +57,22 @@ class ModelRegistry:
         cls._instance = None
 
     def _ensure_initialized(self) -> None:
-        """Seed registry.json with incumbent model if it exists on disk."""
+        """Seed registry with incumbent model metadata, in-memory or on-disk."""
         if self.registry_file.exists():
-            return
+            try:
+                with open(self.registry_file, "r", encoding="utf-8") as f:
+                    self._in_memory_data = json.load(f)
+                    return
+            except Exception:
+                pass
 
         initial_records = []
         active_version = None
 
         if self.active_symlink_file.exists():
-            # Seed with baseline v1.0.0
             version = "v1.0.0"
             target_save = self.versions_dir / f"{version}.json"
-            if not target_save.exists():
+            if self.is_writable and not target_save.exists():
                 try:
                     import shutil
                     shutil.copyfile(self.active_symlink_file, target_save)
@@ -56,7 +82,7 @@ class ModelRegistry:
             initial_records.append({
                 "version": version,
                 "status": "active_champion",
-                "model_path": str(target_save.relative_to(settings.base_dir)),
+                "model_path": str(self.active_symlink_file),
                 "trained_at": "2026-09-17T22:26:00Z",
                 "promoted_at": "2026-09-17T22:26:00Z",
                 "metrics": {
@@ -78,21 +104,38 @@ class ModelRegistry:
             "active_version": active_version,
             "models": initial_records,
         }
-        with open(self.registry_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        self._in_memory_data = data
+
+        if self.is_writable:
+            try:
+                with open(self.registry_file, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2)
+            except (OSError, PermissionError):
+                pass
 
     def _load_data(self) -> Dict[str, Any]:
-        if not self.registry_file.exists():
-            self._ensure_initialized()
-        try:
-            with open(self.registry_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {"active_version": None, "models": []}
+        if self._in_memory_data is not None:
+            return self._in_memory_data
+
+        if self.registry_file.exists():
+            try:
+                with open(self.registry_file, "r", encoding="utf-8") as f:
+                    self._in_memory_data = json.load(f)
+                    return self._in_memory_data
+            except Exception:
+                pass
+
+        self._ensure_initialized()
+        return self._in_memory_data or {"active_version": None, "models": []}
 
     def _save_data(self, data: Dict[str, Any]) -> None:
-        with open(self.registry_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        self._in_memory_data = data
+        if self.is_writable:
+            try:
+                with open(self.registry_file, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2)
+            except (OSError, PermissionError):
+                pass
 
     def get_active_model_path(self) -> Path:
         """Return the path to the currently active model."""
@@ -128,8 +171,12 @@ class ModelRegistry:
         version_file = self.versions_dir / f"{new_version}.json"
         booster.save_model(str(version_file))
 
-        # Copy to active_symlink_file so consumers immediately use the new active model
-        booster.save_model(str(self.active_symlink_file))
+        # Copy to active_symlink_file if root is writable
+        if self.is_writable:
+            try:
+                booster.save_model(str(self.active_symlink_file))
+            except (OSError, PermissionError):
+                pass
 
         # Archive prior champions
         for m in data.get("models", []):

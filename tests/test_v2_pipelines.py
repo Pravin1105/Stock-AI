@@ -214,3 +214,32 @@ def test_api_v2_training_endpoints():
     assert retrain_resp.status_code == 200
     res_data = retrain_resp.json()
     assert res_data["status"] in ["started", "busy"]
+
+
+def test_model_registry_readonly_resilience(tmp_path):
+    """Verify ModelRegistry handles simulated read-only environments (Errno 30) gracefully."""
+    import os
+    import shutil
+    import xgboost as xgb
+
+    ro_dir = tmp_path / "ro_model"
+    ro_dir.mkdir(parents=True, exist_ok=True)
+
+    # Place a dummy tuned_xgboost_model.json
+    dmat = xgb.DMatrix(pd.DataFrame({"a": [1.0]}), label=[1.0])
+    booster = xgb.train({"max_depth": 1}, dmat, num_boost_round=1)
+    booster.save_model(str(ro_dir / "tuned_xgboost_model.json"))
+
+    # Make directory read-only
+    os.chmod(str(ro_dir), 0o555)
+
+    try:
+        # Initializing registry must not raise Errno 30 Read-only file system
+        registry = ModelRegistry(registry_dir=ro_dir)
+        assert registry.get_active_version() == "v1.0.0"
+        active_booster = registry.load_active_booster()
+        assert active_booster is not None
+    finally:
+        # Restore permissions for cleanup
+        os.chmod(str(ro_dir), 0o755)
+

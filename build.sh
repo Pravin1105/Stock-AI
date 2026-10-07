@@ -33,6 +33,9 @@ mkdir -p api/dataset api/model api/static
 rm -rf api/static/*
 cp dataset/train.csv api/dataset/
 cp model/tuned_xgboost_model.json api/model/
+cp model/registry.json api/model/ 2>/dev/null || true
+mkdir -p api/model/versions
+cp -r model/versions/* api/model/versions/ 2>/dev/null || true
 cp -r frontend/dist/* api/static/
 rm -rf api/src
 cp -r src api/src
