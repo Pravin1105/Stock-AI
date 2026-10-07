@@ -95,3 +95,69 @@ def test_gemini_query_parser_invalid_json(mock_client_cls):
     parser = GeminiQueryParser(api_key="fake-api-key")
     with pytest.raises(QueryParserError):
         parser.parse("Forecast demand for store 1")
+
+
+@patch("src.routing.parser.call_chat_completion")
+def test_openai_query_parser_mocked(mock_call):
+    """Test OpenAIQueryParser with mocked chat completion output."""
+    mock_call.return_value = """```json
+    {
+        "raw_query": "Top 5 stores by sales",
+        "task": "ranking",
+        "scope": {
+            "group_by": "store",
+            "limit": 5,
+            "order": "desc"
+        },
+        "explanation": "Rank top 5 stores."
+    }
+    ```"""
+    from src.routing.parser import OpenAIQueryParser
+
+    parser = OpenAIQueryParser(api_key="test-openai-key")
+    intent = parser.parse("Top 5 stores by sales")
+
+    assert intent.task == IntentTask.RANKING
+    assert intent.scope.group_by == "store"
+    assert intent.scope.limit == 5
+    assert intent.scope.order == SortOrder.DESC
+
+
+@patch("src.routing.parser.call_chat_completion")
+def test_groq_query_parser_mocked(mock_call):
+    """Test GroqQueryParser with mocked output."""
+    mock_call.return_value = '{"task": "trend", "scope": {"store_id": 3, "item_id": 8}}'
+    from src.routing.parser import GroqQueryParser
+
+    parser = GroqQueryParser(api_key="gsk-test")
+    intent = parser.parse("Trend for store 3 item 8")
+
+    assert intent.task == IntentTask.TREND
+    assert intent.scope.store_id == 3
+    assert intent.scope.item_id == 8
+
+
+@patch("src.routing.parser.call_chat_completion")
+def test_anthropic_query_parser_mocked(mock_call):
+    """Test AnthropicQueryParser with mocked output."""
+    mock_call.return_value = '{"task": "forecast", "scope": {"store_id": 2, "item_id": 4, "forecast_horizon_days": 10}}'
+    from src.routing.parser import AnthropicQueryParser
+
+    parser = AnthropicQueryParser(api_key="sk-ant-test")
+    intent = parser.parse("Forecast store 2 item 4 for 10 days")
+
+    assert intent.task == IntentTask.FORECAST
+    assert intent.scope.store_id == 2
+    assert intent.scope.forecast_horizon_days == 10
+
+
+def test_extract_json_payload_resilience():
+    """Verify extract_json_payload parses markdown code blocks and raw JSON."""
+    from src.core.llm_client import extract_json_payload
+
+    res1 = extract_json_payload('```json\n{"hello": "world"}\n```')
+    assert res1 == {"hello": "world"}
+
+    res2 = extract_json_payload('Here is the json: {"task": "ranking"} thank you.')
+    assert res2 == {"task": "ranking"}
+

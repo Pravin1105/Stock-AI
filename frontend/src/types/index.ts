@@ -38,6 +38,20 @@ export interface UnifiedResult {
   metadata: Record<string, any>;
 }
 
+export type LLMProvider = 'gemini' | 'openai' | 'anthropic' | 'groq';
+
+export interface ProviderInfo {
+  name: string;
+  default_model: string;
+  models: string[];
+  has_server_key: boolean;
+}
+
+export interface ModelsCatalogResponse {
+  default_provider: LLMProvider;
+  providers: Record<LLMProvider, ProviderInfo>;
+}
+
 export interface ChatMessage {
   id: string;
   sender: 'user' | 'assistant';
@@ -45,6 +59,8 @@ export interface ChatMessage {
   text: string;
   intent?: StructuredIntent;
   result?: UnifiedResult;
+  provider?: string;
+  model?: string;
   isLoading?: boolean;
   error?: string;
 }
@@ -56,3 +72,4 @@ export interface Conversation {
   updatedAt: string;
   messages: ChatMessage[];
 }
+

@@ -10,6 +10,7 @@ from google.genai import types
 from pydantic import ValidationError
 
 from src.core.config import settings
+from src.core.llm_client import call_chat_completion, extract_json_payload
 from src.routing.prompts import QUERY_PARSER_SYSTEM_PROMPT
 from src.schemas.intent import IntentTask, QueryScope, SortOrder, StructuredIntent
 
@@ -97,7 +98,10 @@ class GeminiQueryParser(BaseQueryParser):
                     continue
 
                 try:
-                    intent = StructuredIntent.model_validate_json(response.text)
+                    data = extract_json_payload(response.text)
+                    if not isinstance(data, dict):
+                        raise QueryParserError(f"Expected JSON object from model, got: {type(data)}")
+                    intent = StructuredIntent.model_validate(data)
                     intent.raw_query = clean_query
                     return intent
                 except ValidationError as val_err:
@@ -111,6 +115,80 @@ class GeminiQueryParser(BaseQueryParser):
                 continue
 
         raise QueryParserError(f"Gemini Query Parser error: {last_error}")
+
+
+class ProviderQueryParser(BaseQueryParser):
+    """Generic Query Parser for OpenAI, Anthropic Claude, and Groq models."""
+
+    def __init__(
+        self,
+        provider: str,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> None:
+        self.provider = provider.lower()
+        if self.provider == "openai":
+            self.api_key = api_key or settings.openai_api_key
+            self.model = model or settings.openai_model
+        elif self.provider == "anthropic":
+            self.api_key = api_key or settings.anthropic_api_key
+            self.model = model or settings.anthropic_model
+        elif self.provider == "groq":
+            self.api_key = api_key or settings.groq_api_key
+            self.model = model or settings.groq_model
+        else:
+            raise ValueError(f"Unsupported provider: {provider}")
+
+        if not self.api_key:
+            raise ValueError(
+                f"API key is required for {self.provider}. Pass it via BYOK or configure in environment."
+            )
+
+    def parse(self, query: str) -> StructuredIntent:
+        clean_query = query.strip()
+        if not clean_query:
+            raise ValueError("Query string cannot be empty.")
+
+        prompt = f"Extract structured intent and scope for this user query:\n\n{clean_query}"
+
+        try:
+            raw_text = call_chat_completion(
+                provider=self.provider,
+                model=self.model,
+                api_key=self.api_key,
+                system_prompt=QUERY_PARSER_SYSTEM_PROMPT,
+                user_prompt=prompt,
+                json_mode=True,
+                temperature=0.0,
+            )
+
+            data = extract_json_payload(raw_text)
+            if not isinstance(data, dict):
+                raise QueryParserError(f"Expected JSON object from model, got: {type(data)}")
+
+            if "raw_query" not in data or not data["raw_query"]:
+                data["raw_query"] = clean_query
+
+            return StructuredIntent.model_validate(data)
+        except ValidationError as val_err:
+            raise QueryParserError(f"{self.provider} response failed schema validation: {val_err}") from val_err
+        except Exception as err:
+            raise QueryParserError(f"{self.provider} Query Parser error: {err}") from err
+
+
+class OpenAIQueryParser(ProviderQueryParser):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None) -> None:
+        super().__init__(provider="openai", api_key=api_key, model=model)
+
+
+class AnthropicQueryParser(ProviderQueryParser):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None) -> None:
+        super().__init__(provider="anthropic", api_key=api_key, model=model)
+
+
+class GroqQueryParser(ProviderQueryParser):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None) -> None:
+        super().__init__(provider="groq", api_key=api_key, model=model)
 
 
 class RuleBasedQueryParser(BaseQueryParser):
@@ -182,3 +260,32 @@ class RuleBasedQueryParser(BaseQueryParser):
             scope=scope,
             explanation=f"Deterministically routed to {task.value} with scope {scope.model_dump(mode='json', exclude_none=True)}.",
         )
+
+
+def get_query_parser(
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    api_key: Optional[str] = None,
+) -> BaseQueryParser:
+    """Factory returning the appropriate query parser with BYOK support."""
+    prov = (provider or settings.default_provider or "gemini").strip().lower()
+
+    if prov == "gemini":
+        key = api_key or settings.gemini_api_key
+        if key:
+            return GeminiQueryParser(api_key=key, model=model or settings.gemini_model)
+    elif prov == "openai":
+        key = api_key or settings.openai_api_key
+        if key:
+            return OpenAIQueryParser(api_key=key, model=model or settings.openai_model)
+    elif prov == "anthropic":
+        key = api_key or settings.anthropic_api_key
+        if key:
+            return AnthropicQueryParser(api_key=key, model=model or settings.anthropic_model)
+    elif prov == "groq":
+        key = api_key or settings.groq_api_key
+        if key:
+            return GroqQueryParser(api_key=key, model=model or settings.groq_model)
+
+    return RuleBasedQueryParser()
+

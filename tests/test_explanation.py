@@ -103,3 +103,70 @@ def test_stock_ai_pipeline_end_to_end():
     assert len(response.result.records) == 3
     assert "Store 2" in response.explanation
     assert response.result.records[0]["store"] == 2
+
+
+@patch("src.explanation.explainer.call_chat_completion")
+def test_openai_explainer_mocked(mock_call):
+    """Verify OpenAIExplainer invokes chat completion and returns text."""
+    mock_call.return_value = "OpenAI analysis: Store 2 dominated historical performance."
+    from src.explanation.explainer import OpenAIExplainer
+
+    intent = StructuredIntent(
+        raw_query="Top store",
+        task=IntentTask.RANKING,
+        scope=QueryScope(limit=1, order=SortOrder.DESC, group_by="store"),
+    )
+    result = UnifiedResult(
+        intent=intent,
+        task=IntentTask.RANKING,
+        columns=["rank", "store", "total_sales"],
+        records=[{"rank": 1, "store": 2, "total_sales": 6120128.0}],
+        summary=SummaryMetrics(total_sales=6120128.0, record_count=1),
+        metadata={"grouped_by": "store"},
+    )
+
+    explainer = OpenAIExplainer(api_key="sk-test", model="gpt-4o-mini")
+    narrative = explainer.explain(result)
+
+    assert "Store 2 dominated" in narrative
+
+
+@patch("src.explanation.explainer.call_chat_completion")
+def test_groq_explainer_mocked(mock_call):
+    """Verify GroqExplainer invokes chat completion and returns text."""
+    mock_call.return_value = "Groq Llama 3 analysis: Store 2 had highest velocity."
+    from src.explanation.explainer import GroqExplainer
+
+    intent = StructuredIntent(
+        raw_query="Top store",
+        task=IntentTask.RANKING,
+        scope=QueryScope(limit=1, order=SortOrder.DESC, group_by="store"),
+    )
+    result = UnifiedResult(
+        intent=intent,
+        task=IntentTask.RANKING,
+        columns=["rank", "store", "total_sales"],
+        records=[{"rank": 1, "store": 2, "total_sales": 6120128.0}],
+        summary=SummaryMetrics(total_sales=6120128.0, record_count=1),
+        metadata={"grouped_by": "store"},
+    )
+
+    explainer = GroqExplainer(api_key="gsk-test", model="llama-3.3-70b-versatile")
+    narrative = explainer.explain(result)
+
+    assert "highest velocity" in narrative
+
+
+def test_pipeline_byok_override():
+    """Verify StockAIPipeline accepts provider, model, and api_key at run time."""
+    pipeline = StockAIPipeline(explainer=TemplateExplainer())
+    resp = pipeline.run(
+        query="Top 3 stores",
+        provider="groq",
+        model="llama-3.3-70b-versatile",
+        api_key="mock-groq-key",
+    )
+    assert resp.provider == "groq"
+    assert resp.model == "llama-3.3-70b-versatile"
+    assert resp.result.status == "success"
+

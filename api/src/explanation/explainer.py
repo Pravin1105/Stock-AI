@@ -8,6 +8,7 @@ from google import genai
 from google.genai import types
 
 from src.core.config import settings
+from src.core.llm_client import call_chat_completion
 from src.explanation.prompts import EXPLANATION_SYSTEM_PROMPT
 from src.schemas.intent import IntentTask
 from src.schemas.results import UnifiedResult
@@ -186,3 +187,109 @@ class TemplateExplainer(BaseExplainer):
             f"Forecast generated using the trained gradient-boosted XGBoost model starting from **{records[0]['date']}** to **{records[-1]['date']}**.",
         ]
         return "\n".join(lines)
+
+
+class ProviderExplainer(BaseExplainer):
+    """Generic explanation engine for OpenAI, Anthropic Claude, and Groq."""
+
+    def __init__(
+        self,
+        provider: str,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> None:
+        self.provider = provider.lower()
+        if self.provider == "openai":
+            self.api_key = api_key or settings.openai_api_key
+            self.model = model or settings.openai_model
+        elif self.provider == "anthropic":
+            self.api_key = api_key or settings.anthropic_api_key
+            self.model = model or settings.anthropic_model
+        elif self.provider == "groq":
+            self.api_key = api_key or settings.groq_api_key
+            self.model = model or settings.groq_model
+        else:
+            raise ValueError(f"Unsupported provider: {provider}")
+
+        if not self.api_key:
+            raise ValueError(
+                f"API key is required for {self.provider}. Pass it via BYOK or set in environment."
+            )
+
+    def explain(self, result: UnifiedResult) -> str:
+        if result.status != "success":
+            return f"Unable to generate explanation due to an execution error: {result.error_message}"
+
+        if not result.records:
+            return "No data records were found matching your query criteria."
+
+        context = {
+            "user_query": result.intent.raw_query,
+            "task_type": result.task.value,
+            "summary_metrics": result.summary.model_dump(exclude_none=True),
+            "metadata": result.metadata,
+            "data_records": result.records[:25],
+        }
+
+        prompt = (
+            f"Generate an insightful business explanation for the following analytical results:\n\n"
+            f"```json\n{json.dumps(context, indent=2)}\n```"
+        )
+
+        try:
+            return call_chat_completion(
+                provider=self.provider,
+                model=self.model,
+                api_key=self.api_key,
+                system_prompt=EXPLANATION_SYSTEM_PROMPT,
+                user_prompt=prompt,
+                json_mode=False,
+                temperature=0.3,
+            )
+        except Exception as err:
+            fallback = TemplateExplainer()
+            return f"{fallback.explain(result)}\n\n*(Note: Generated via fallback explainer due to {self.provider} error: {err})*"
+
+
+class OpenAIExplainer(ProviderExplainer):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None) -> None:
+        super().__init__(provider="openai", api_key=api_key, model=model)
+
+
+class AnthropicExplainer(ProviderExplainer):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None) -> None:
+        super().__init__(provider="anthropic", api_key=api_key, model=model)
+
+
+class GroqExplainer(ProviderExplainer):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None) -> None:
+        super().__init__(provider="groq", api_key=api_key, model=model)
+
+
+def get_explainer(
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    api_key: Optional[str] = None,
+) -> BaseExplainer:
+    """Factory returning the appropriate explainer with BYOK support."""
+    prov = (provider or settings.default_provider or "gemini").strip().lower()
+
+    if prov == "gemini":
+        key = api_key or settings.gemini_api_key
+        if key:
+            return GeminiExplainer(api_key=key, model=model or settings.gemini_model)
+    elif prov == "openai":
+        key = api_key or settings.openai_api_key
+        if key:
+            return OpenAIExplainer(api_key=key, model=model or settings.openai_model)
+    elif prov == "anthropic":
+        key = api_key or settings.anthropic_api_key
+        if key:
+            return AnthropicExplainer(api_key=key, model=model or settings.anthropic_model)
+    elif prov == "groq":
+        key = api_key or settings.groq_api_key
+        if key:
+            return GroqExplainer(api_key=key, model=model or settings.groq_model)
+
+    return TemplateExplainer()
+

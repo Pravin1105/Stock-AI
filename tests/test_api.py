@@ -62,3 +62,40 @@ def test_vercel_entrypoint_routes():
     assert res_health.status_code == 200
     assert res_health.json()["status"] == "healthy"
 
+
+def test_models_catalog_endpoint():
+    """Verify /api/models returns all 4 providers and metadata."""
+    response = client.get("/api/models")
+    assert response.status_code == 200
+    data = response.json()
+    assert "default_provider" in data
+    assert "providers" in data
+
+    providers = data["providers"]
+    for expected_p in ["gemini", "openai", "anthropic", "groq"]:
+        assert expected_p in providers
+        assert "name" in providers[expected_p]
+        assert "default_model" in providers[expected_p]
+        assert len(providers[expected_p]["models"]) > 0
+        assert "has_server_key" in providers[expected_p]
+
+
+def test_query_with_byok_and_provider_routing():
+    """Verify /api/query respects provider and returns provider attribution."""
+    response = client.post(
+        "/api/query",
+        json={
+            "query": "Top 2 stores by sales",
+            "provider": "groq",
+            "model": "llama-3.3-70b-versatile",
+            "api_key": "dummy-groq-key",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["provider"] == "groq"
+    assert data["model"] == "llama-3.3-70b-versatile"
+    assert data["result"]["status"] == "success"
+    assert len(data["result"]["records"]) == 2
+
+

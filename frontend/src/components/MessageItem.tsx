@@ -54,7 +54,13 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message }) => {
                   Item: #{intent.scope.item_id}
                 </span>
               )}
+              {message.provider && (
+                <span style={{ fontSize: '11px', background: 'var(--surface-warm)', border: '1px solid var(--border-strong)', padding: '2px 8px', borderRadius: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                  {message.provider === 'groq' ? '⚡ ' : ''}{message.provider.toUpperCase()} · {message.model || 'default'}
+                </span>
+              )}
             </div>
+
 
             {/* Toggle View Mode */}
             {result && result.records.length > 0 && (

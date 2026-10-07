@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { ChatWorkspace } from './components/ChatWorkspace';
-import { queryStockAI } from './services/api';
-import { Conversation, ChatMessage } from './types';
+import { ModelSelectorModal } from './components/ModelSelectorModal';
+import { getAvailableModels, queryStockAI } from './services/api';
+import { Conversation, ChatMessage, LLMProvider, ModelsCatalogResponse } from './types';
 
 const STORAGE_KEY = 'stock_ai_conversations_v1';
+const PROVIDER_KEY = 'stock_ai_selected_provider';
+const MODEL_KEY = 'stock_ai_selected_model';
+const BYOK_KEYS_STORAGE = 'stock_ai_byok_keys';
 
 export const App: React.FC = () => {
   const [conversations, setConversations] = useState<Conversation[]>(() => {
@@ -33,7 +37,54 @@ export const App: React.FC = () => {
 
   const [isLoading, setIsLoading] = useState(false);
 
-  // Sync with LocalStorage
+  // LLM Provider & BYOK State
+  const [selectedProvider, setSelectedProvider] = useState<LLMProvider>(() => {
+    try {
+      const saved = localStorage.getItem(PROVIDER_KEY);
+      if (saved && ['gemini', 'openai', 'anthropic', 'groq'].includes(saved)) {
+        return saved as LLMProvider;
+      }
+    } catch {
+      // ignore
+    }
+    return 'gemini';
+  });
+
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem(MODEL_KEY);
+      if (saved) return saved;
+    } catch {
+      // ignore
+    }
+    return 'gemini-2.0-flash';
+  });
+
+  const [byokKeys, setByokKeys] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem(BYOK_KEYS_STORAGE);
+      if (saved) return JSON.parse(saved);
+    } catch {
+      // ignore
+    }
+    return {};
+  });
+
+  const [modelsCatalog, setModelsCatalog] = useState<ModelsCatalogResponse | null>(null);
+  const [isModelModalOpen, setIsModelModalOpen] = useState(false);
+
+  // Fetch server models catalog on mount
+  useEffect(() => {
+    getAvailableModels()
+      .then((catalog) => {
+        setModelsCatalog(catalog);
+      })
+      .catch((err) => {
+        console.warn('Could not load models catalog from server:', err);
+      });
+  }, []);
+
+  // Sync Conversations with LocalStorage
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
@@ -41,6 +92,50 @@ export const App: React.FC = () => {
       // ignore
     }
   }, [conversations]);
+
+  // Sync Provider & Model
+  const handleSelectProvider = (prov: LLMProvider) => {
+    setSelectedProvider(prov);
+    try {
+      localStorage.setItem(PROVIDER_KEY, prov);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleSelectModel = (mod: string) => {
+    setSelectedModel(mod);
+    try {
+      localStorage.setItem(MODEL_KEY, mod);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleSaveKey = (prov: LLMProvider, key: string) => {
+    setByokKeys((prev) => {
+      const updated = { ...prev, [prov]: key };
+      try {
+        localStorage.setItem(BYOK_KEYS_STORAGE, JSON.stringify(updated));
+      } catch {
+        // ignore
+      }
+      return updated;
+    });
+  };
+
+  const handleClearKey = (prov: LLMProvider) => {
+    setByokKeys((prev) => {
+      const updated = { ...prev };
+      delete updated[prov];
+      try {
+        localStorage.setItem(BYOK_KEYS_STORAGE, JSON.stringify(updated));
+      } catch {
+        // ignore
+      }
+      return updated;
+    });
+  };
 
   const activeConv = conversations.find((c) => c.id === activeId) || conversations[0];
 
@@ -115,7 +210,11 @@ export const App: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const response = await queryStockAI(queryText);
+      const response = await queryStockAI(queryText, {
+        provider: selectedProvider,
+        model: selectedModel,
+        apiKey: byokKeys[selectedProvider],
+      });
 
       const assistantMessage: ChatMessage = {
         id: 'msg-' + Date.now(),
@@ -124,6 +223,8 @@ export const App: React.FC = () => {
         text: response.explanation,
         intent: response.intent,
         result: response.result,
+        provider: response.provider || selectedProvider,
+        model: response.model || selectedModel,
         isLoading: false,
       };
 
@@ -145,6 +246,8 @@ export const App: React.FC = () => {
         sender: 'assistant',
         timestamp: new Date().toISOString(),
         text: `Error processing query: ${errorDetail}`,
+        provider: selectedProvider,
+        model: selectedModel,
         isLoading: false,
         error: errorDetail,
       };
@@ -165,6 +268,11 @@ export const App: React.FC = () => {
     }
   };
 
+  const hasKeyConfigured = Boolean(
+    byokKeys[selectedProvider] ||
+    modelsCatalog?.providers[selectedProvider]?.has_server_key
+  );
+
   return (
     <div className="app-container">
       <Sidebar
@@ -173,12 +281,31 @@ export const App: React.FC = () => {
         onSelect={setActiveId}
         onNew={handleNewConversation}
         onDelete={handleDeleteConversation}
+        onOpenSettings={() => setIsModelModalOpen(true)}
       />
+
       <ChatWorkspace
         messages={activeConv ? activeConv.messages : []}
         onSend={handleSend}
         isLoading={isLoading}
+        selectedProvider={selectedProvider}
+        selectedModel={selectedModel}
+        hasKeyConfigured={hasKeyConfigured}
+        onOpenModelModal={() => setIsModelModalOpen(true)}
+      />
+      <ModelSelectorModal
+        isOpen={isModelModalOpen}
+        onClose={() => setIsModelModalOpen(false)}
+        selectedProvider={selectedProvider}
+        selectedModel={selectedModel}
+        onSelectProvider={handleSelectProvider}
+        onSelectModel={handleSelectModel}
+        byokKeys={byokKeys}
+        onSaveKey={handleSaveKey}
+        onClearKey={handleClearKey}
+        modelsCatalog={modelsCatalog}
       />
     </div>
   );
 };
+

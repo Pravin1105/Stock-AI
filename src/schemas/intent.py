@@ -1,7 +1,7 @@
 """Intent and scope schemas for query parsing and routing."""
 
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -56,6 +56,20 @@ class QueryScope(BaseModel):
         description="Dimension to aggregate or rank by: 'store', 'item', or 'date'.",
     )
 
+    @field_validator("order", mode="before")
+    @classmethod
+    def normalize_order(cls, v: Optional[str]) -> Optional[str]:
+        if isinstance(v, str):
+            return v.strip().lower()
+        return v
+
+    @field_validator("group_by", mode="before")
+    @classmethod
+    def normalize_group_by(cls, v: Optional[str]) -> Optional[str]:
+        if isinstance(v, str):
+            return v.strip().lower()
+        return v
+
     @field_validator("store_id")
     @classmethod
     def validate_store_id(cls, v: Optional[int]) -> Optional[int]:
@@ -86,3 +100,11 @@ class StructuredIntent(BaseModel):
         default=None,
         description="Brief reasoning describing how the intent and scope were derived.",
     )
+
+    @field_validator("task", mode="before")
+    @classmethod
+    def normalize_task(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return v.strip().lower()
+        return v
+

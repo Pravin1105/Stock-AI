@@ -62,11 +62,13 @@ except ImportError:
     sys.modules["scipy.sparse"] = sparse_mod
     sys.modules["scipy.special"] = special_mod
 
+from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+
 
 # Top-level FastAPI instance explicitly defined for Vercel runtime detection
 app = FastAPI(
@@ -164,8 +166,49 @@ def health_check():
     return health_data
 
 
+@app.get("/api/models")
+@app.get("/models")
+def get_available_models():
+    """Returns available LLM providers, model catalogs, and key availability."""
+    try:
+        from src.core.config import PROVIDER_METADATA, settings
+
+        providers_info = {}
+        for prov_key, info in PROVIDER_METADATA.items():
+            server_key = False
+            if prov_key == "gemini":
+                server_key = bool(settings.gemini_api_key)
+            elif prov_key == "openai":
+                server_key = bool(settings.openai_api_key)
+            elif prov_key == "anthropic":
+                server_key = bool(settings.anthropic_api_key)
+            elif prov_key == "groq":
+                server_key = bool(settings.groq_api_key)
+
+            providers_info[prov_key] = {
+                "name": info["name"],
+                "default_model": info["default_model"],
+                "models": info["models"],
+                "has_server_key": server_key,
+            }
+
+        return {
+            "default_provider": settings.default_provider,
+            "providers": providers_info,
+        }
+    except Exception as e:
+        return {
+            "default_provider": "gemini",
+            "providers": {},
+            "error": str(e),
+        }
+
+
 class QueryRequest(BaseModel):
     query: str = Field(..., min_length=1)
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    api_key: Optional[str] = None
 
 
 # Lazy-loaded pipeline singleton to prevent cold-start import crashes
@@ -193,12 +236,19 @@ def execute_query(req: QueryRequest):
 
     try:
         pipeline = get_pipeline()
-        response = pipeline.run(clean_query)
+        response = pipeline.run(
+            query=clean_query,
+            provider=req.provider,
+            model=req.model,
+            api_key=req.api_key,
+        )
         return {
             "query": response.query,
             "intent": response.intent.model_dump(mode="json"),
             "result": response.result.model_dump(mode="json"),
             "explanation": response.explanation,
+            "provider": response.provider,
+            "model": response.model,
         }
     except Exception as err:
         err_msg = str(err)
@@ -207,3 +257,4 @@ def execute_query(req: QueryRequest):
             status_code=500,
             detail=f"Backend execution error: {err_msg}",
         ) from err
+

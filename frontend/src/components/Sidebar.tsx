@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageSquare, Plus, Trash2, TrendingUp } from 'lucide-react';
+import { MessageSquare, Plus, Trash2, TrendingUp, Key } from 'lucide-react';
 import { Conversation } from '../types';
 
 interface SidebarProps {
@@ -8,6 +8,7 @@ interface SidebarProps {
   onSelect: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string, e: React.MouseEvent) => void;
+  onOpenSettings?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -16,7 +17,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelect,
   onNew,
   onDelete,
+  onOpenSettings,
 }) => {
+
   return (
     <aside className="sidebar">
       {/* Sidebar Header */}
@@ -102,6 +105,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Footer Info */}
       <div style={{ padding: '16px', borderTop: '1px solid var(--border-strong)', fontSize: '12px', color: 'var(--text-secondary)' }}>
+        {onOpenSettings && (
+          <button
+            onClick={onOpenSettings}
+            style={{
+              width: '100%',
+              backgroundColor: 'white',
+              border: '1px solid var(--border-strong)',
+              padding: '8px 12px',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              fontWeight: 600,
+              fontSize: '12px',
+              color: 'var(--text-primary)',
+              marginBottom: '12px',
+              boxShadow: 'var(--shadow-sm)',
+            }}
+          >
+            <Key size={14} color="var(--accent)" />
+            Model & BYOK Settings
+          </button>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
           <TrendingUp size={15} color="var(--accent)" />
           Stock AI Engine v1.0
@@ -111,3 +138,4 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </aside>
   );
 };
+

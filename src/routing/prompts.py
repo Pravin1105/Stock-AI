@@ -27,4 +27,23 @@ Dataset Scope Constraints ("Scope?"):
 
 Do not perform any math, do not answer the question, and do not invent figures.
 Extract only the task and scope matching the schema.
+
+REQUIRED JSON OUTPUT FORMAT:
+Respond strictly with a JSON object conforming to this exact structure:
+{
+  "raw_query": "<user query>",
+  "task": "ranking" | "trend" | "forecast",
+  "scope": {
+    "store_id": integer or null,
+    "item_id": integer or null,
+    "start_date": "YYYY-MM-DD" or null,
+    "end_date": "YYYY-MM-DD" or null,
+    "forecast_horizon_days": integer or null,
+    "limit": integer or null,
+    "order": "asc" | "desc" or null,
+    "group_by": "store" | "item" | "date" or null
+  },
+  "explanation": "<brief explanation of extracted intent and scope>"
+}
+
 """
