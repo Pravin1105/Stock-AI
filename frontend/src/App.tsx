@@ -270,8 +270,9 @@ export const App: React.FC = () => {
 
   const hasKeyConfigured = Boolean(
     byokKeys[selectedProvider] ||
-    modelsCatalog?.providers[selectedProvider]?.has_server_key
+    modelsCatalog?.providers?.[selectedProvider]?.has_server_key
   );
+
 
   return (
     <div className="app-container">

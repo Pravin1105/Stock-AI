@@ -111,7 +111,7 @@ export const ModelSelectorModal: React.FC<ModelSelectorModalProps> = ({
     setSavedNotice(false);
 
     const availableModels =
-      modelsCatalog?.providers[activeTab]?.models || PROVIDER_METAS[activeTab].defaultModels;
+      modelsCatalog?.providers?.[activeTab]?.models || PROVIDER_METAS[activeTab].defaultModels;
     if (activeTab === selectedProvider && !availableModels.includes(selectedModel)) {
       setIsCustomModel(true);
       setCustomModelInput(selectedModel);
@@ -123,7 +123,7 @@ export const ModelSelectorModal: React.FC<ModelSelectorModalProps> = ({
   if (!isOpen) return null;
 
   const currentMeta = PROVIDER_METAS[activeTab];
-  const providerCatalog = modelsCatalog?.providers[activeTab];
+  const providerCatalog = modelsCatalog?.providers?.[activeTab];
   const availableModels = providerCatalog?.models || currentMeta.defaultModels;
   const hasServerKey = Boolean(providerCatalog?.has_server_key);
   const hasUserKey = Boolean(byokKeys[activeTab]);
@@ -260,7 +260,7 @@ export const ModelSelectorModal: React.FC<ModelSelectorModalProps> = ({
               {(Object.keys(PROVIDER_METAS) as LLMProvider[]).map((provKey) => {
                 const meta = PROVIDER_METAS[provKey];
                 const isSelected = activeTab === provKey;
-                const provServerKey = Boolean(modelsCatalog?.providers[provKey]?.has_server_key);
+                const provServerKey = Boolean(modelsCatalog?.providers?.[provKey]?.has_server_key);
                 const provUserKey = Boolean(byokKeys[provKey]);
 
                 return (
@@ -271,7 +271,7 @@ export const ModelSelectorModal: React.FC<ModelSelectorModalProps> = ({
                       setActiveTab(provKey);
                       setIsCustomModel(false);
                       const def =
-                        modelsCatalog?.providers[provKey]?.default_model ||
+                        modelsCatalog?.providers?.[provKey]?.default_model ||
                         meta.defaultModels[0];
                       onSelectModel(def);
                     }}

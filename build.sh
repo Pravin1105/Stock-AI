@@ -3,8 +3,9 @@ set -e
 
 # 1. Build Vite frontend
 cd frontend
-npm install
+npm install --include=dev
 npm run build
+
 
 # 2. Adjust hardcoded localhost to relative /api or custom VITE_API_BASE_URL for production
 node -e "

@@ -19,7 +19,6 @@ __pycache__/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
-public/
 
 # Large temporary notebook output
 dataset/working/
