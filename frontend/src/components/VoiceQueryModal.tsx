@@ -104,6 +104,9 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
 
     try {
       const audio = await recorderRef.current.stopRecording();
+      if (!audio || !audio.blob || audio.blob.size === 0) {
+        throw new Error('Recording was too short or silent. Please speak for at least 1-2 seconds.');
+      }
       setRecordedAudio(audio);
 
       // Call backend STT endpoint
@@ -121,7 +124,11 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
       setStep('review');
     } catch (err: any) {
       console.error('Transcription failed:', err);
-      setErrorMessage(err?.message || 'Audio transcription failed. Please try again.');
+      const displayMsg =
+        typeof err?.message === 'string' && err.message !== '[object Object]'
+          ? err.message
+          : 'Audio transcription failed. Please try speaking clearly for 2-3 seconds.';
+      setErrorMessage(displayMsg);
       setStep('error');
     }
   };

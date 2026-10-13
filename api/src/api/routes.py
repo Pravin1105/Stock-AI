@@ -261,10 +261,14 @@ def transcribe_voice(req: VoiceTranscribeRequest) -> VoiceTranscribeResponse:
     from src.core.transcription_service import TranscriptionService
 
     try:
-        raw_b64 = req.audio_base64
+        raw_b64 = req.audio_base64.strip()
         if "," in raw_b64:
             raw_b64 = raw_b64.split(",", 1)[1]
-        audio_bytes = base64.b64decode(raw_b64)
+        raw_b64 = raw_b64.replace("-", "+").replace("_", "/")
+        padding_needed = len(raw_b64) % 4
+        if padding_needed:
+            raw_b64 += "=" * (4 - padding_needed)
+        audio_bytes = base64.b64decode(raw_b64, validate=True)
     except Exception as err:
         raise HTTPException(status_code=400, detail=f"Invalid base64 audio data: {err}") from err
 
