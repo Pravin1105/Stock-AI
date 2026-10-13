@@ -364,12 +364,14 @@ class CometChatTokenRequest(BaseModel):
 
 
 @app.get("/api/cometchat/config")
+@app.get("/cometchat/config")
 def get_cometchat_config():
     from src.core.cometchat_service import CometChatService
     return CometChatService().get_public_config()
 
 
 @app.post("/api/cometchat/token")
+@app.post("/cometchat/token")
 def generate_cometchat_token(req: CometChatTokenRequest):
     from src.core.cometchat_service import CometChatService
     try:
@@ -396,6 +398,7 @@ class VoiceTranscribeResponse(BaseModel):
 
 
 @app.post("/api/voice/transcribe", response_model=VoiceTranscribeResponse)
+@app.post("/voice/transcribe", response_model=VoiceTranscribeResponse)
 def transcribe_voice(req: VoiceTranscribeRequest) -> VoiceTranscribeResponse:
     """Transcribes an audio recording into text for analytical query review."""
     import base64

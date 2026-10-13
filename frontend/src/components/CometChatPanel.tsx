@@ -166,7 +166,7 @@ export const CometChatPanel: React.FC<CometChatPanelProps> = ({ isOpen, onClose 
   const handleSwitchUser = (newUid: string) => {
     if (newUid === currentUserUid) return;
     handleDiscardRecording();
-    const newTarget = availableUsers.find((u) => u.uid !== newUid)?.uid || 'analyst_2';
+    const newTarget = (availableUsers || []).find((u) => u.uid !== newUid)?.uid || 'analyst_2';
     setCurrentUserUid(newUid);
     setTargetUserUid(newTarget);
     setMessages([]);
@@ -285,7 +285,7 @@ export const CometChatPanel: React.FC<CometChatPanelProps> = ({ isOpen, onClose 
   const handleSendVoiceMessage = async (audioToSend = recordedAudio) => {
     if (!audioToSend || isSending) return;
 
-    const currentUserObj = availableUsers.find((u) => u.uid === currentUserUid) || availableUsers[0];
+    const currentUserObj = (availableUsers || []).find((u) => u.uid === currentUserUid) || (availableUsers?.[0]) || { uid: 'analyst_1', name: 'Senior Demand Analyst', role: 'Analyst' };
     const optimisticId = `temp-audio-${Date.now()}`;
     const optimisticMsg: CometChatMessage = {
       id: optimisticId,
@@ -367,8 +367,8 @@ export const CometChatPanel: React.FC<CometChatPanelProps> = ({ isOpen, onClose 
 
   if (!isOpen) return null;
 
-  const currentUserObj = availableUsers.find((u) => u.uid === currentUserUid) || availableUsers[0];
-  const targetUserObj = availableUsers.find((u) => u.uid === targetUserUid) || availableUsers[1];
+  const currentUserObj = (availableUsers || []).find((u) => u.uid === currentUserUid) || (availableUsers?.[0]) || { uid: 'analyst_1', name: 'Senior Demand Analyst', role: 'Analyst' };
+  const targetUserObj = (availableUsers || []).find((u) => u.uid === targetUserUid) || (availableUsers?.[1]) || { uid: 'analyst_2', name: 'Inventory Operations Lead', role: 'Operations' };
 
   return (
     <div

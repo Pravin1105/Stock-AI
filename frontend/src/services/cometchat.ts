@@ -29,34 +29,48 @@ let currentSession: UserSessionState = {
 const mockMessageStore: CometChatMessage[] = [];
 const mockListeners: Map<string, (msg: CometChatMessage) => void> = new Map();
 
+const FALLBACK_DEFAULT_USERS: CometChatUser[] = [
+  { uid: 'analyst_1', name: 'Senior Demand Analyst', role: 'Analyst' },
+  { uid: 'analyst_2', name: 'Inventory Operations Lead', role: 'Operations' },
+];
+
 /**
  * Fetch public CometChat config from the backend without exposing any secret keys.
  */
 export async function getCometChatConfig(): Promise<CometChatPublicConfig> {
-  if (currentConfig) return currentConfig;
+  const fallbackConfig: CometChatPublicConfig = {
+    app_id: import.meta.env.VITE_COMETCHAT_APP_ID || '',
+    region: import.meta.env.VITE_COMETCHAT_REGION || 'us',
+    is_configured: Boolean(import.meta.env.VITE_COMETCHAT_APP_ID),
+    default_users: FALLBACK_DEFAULT_USERS,
+  };
+
+  if (currentConfig && Array.isArray(currentConfig.default_users) && currentConfig.default_users.length > 0) {
+    return currentConfig;
+  }
 
   try {
     const res = await fetch(`${API_BASE_URL}/api/cometchat/config`);
     if (res.ok) {
-      currentConfig = await res.json();
-      return currentConfig!;
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data && Array.isArray(data.default_users) && data.default_users.length > 0) {
+          currentConfig = {
+            app_id: data.app_id || fallbackConfig.app_id,
+            region: data.region || fallbackConfig.region,
+            is_configured: Boolean(data.is_configured),
+            default_users: data.default_users,
+          };
+          return currentConfig;
+        }
+      }
     }
   } catch (err) {
-    console.warn('Failed to load CometChat config from server:', err);
+    console.warn('Failed to load CometChat config from server, using fallback:', err);
   }
 
-  // Fallback to Vite env variables if server config call fails
-  const envAppId = import.meta.env.VITE_COMETCHAT_APP_ID || '';
-  const envRegion = import.meta.env.VITE_COMETCHAT_REGION || 'us';
-  currentConfig = {
-    app_id: envAppId,
-    region: envRegion,
-    is_configured: Boolean(envAppId),
-    default_users: [
-      { uid: 'analyst_1', name: 'Senior Demand Analyst', role: 'Analyst' },
-      { uid: 'analyst_2', name: 'Inventory Operations Lead', role: 'Operations' },
-    ],
-  };
+  currentConfig = fallbackConfig;
   return currentConfig;
 }
 
@@ -113,34 +127,41 @@ export async function initCometChat(): Promise<InitResult> {
  */
 export async function loginCometChatUser(uid: string, name?: string): Promise<UserSessionState> {
   const config = await getCometChatConfig();
-  const displayName = name || config.default_users.find((u) => u.uid === uid)?.name || uid;
+  const defaultUsers = config?.default_users?.length ? config.default_users : FALLBACK_DEFAULT_USERS;
+  const displayName = name || defaultUsers.find((u) => u.uid === uid)?.name || uid;
 
-  // Request auth token from backend
-  const tokenRes = await fetch(`${API_BASE_URL}/api/cometchat/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ uid, name: displayName }),
-  });
-
-  if (!tokenRes.ok) {
-    const errText = await tokenRes.text();
-    throw new Error(`Failed to retrieve CometChat auth token: ${errText}`);
-  }
-
-  const tokenData = await tokenRes.json();
-
-  // If running in mock/demo mode because server keys are absent
-  if (tokenData.status === 'mock_mode' || !isInitialized) {
-    currentSession = {
-      isLoggedIn: true,
-      user: { uid, name: displayName },
-      isMock: true,
-    };
-    return currentSession;
-  }
-
-  // Real CometChat SDK login using server-generated auth token
   try {
+    // Request auth token from backend
+    const tokenRes = await fetch(`${API_BASE_URL}/api/cometchat/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid, name: displayName }),
+    });
+
+    if (!tokenRes.ok) {
+      const errText = await tokenRes.text();
+      console.warn(`Server auth token retrieval returned ${tokenRes.status}: ${errText}. Activating demo mode.`);
+      currentSession = {
+        isLoggedIn: true,
+        user: { uid, name: displayName },
+        isMock: true,
+      };
+      return currentSession;
+    }
+
+    const tokenData = await tokenRes.json();
+
+    // If running in mock/demo mode because server keys are absent
+    if (tokenData.status === 'mock_mode' || !isInitialized) {
+      currentSession = {
+        isLoggedIn: true,
+        user: { uid, name: displayName },
+        isMock: true,
+      };
+      return currentSession;
+    }
+
+    // Real CometChat SDK login using server-generated auth token
     const loggedIn = await CometChat.login(tokenData.auth_token);
     currentSession = {
       isLoggedIn: true,
@@ -153,8 +174,13 @@ export async function loginCometChatUser(uid: string, name?: string): Promise<Us
     };
     return currentSession;
   } catch (err: any) {
-    console.error('CometChat.login failed with auth token:', err);
-    throw new Error(`CometChat login failed: ${err?.message || err}`);
+    console.warn('CometChat login/token error, falling back to demo session:', err);
+    currentSession = {
+      isLoggedIn: true,
+      user: { uid, name: displayName },
+      isMock: true,
+    };
+    return currentSession;
   }
 }
 
