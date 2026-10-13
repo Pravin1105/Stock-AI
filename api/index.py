@@ -63,7 +63,7 @@ except ImportError:
     sys.modules["scipy.special"] = special_mod
 
 from typing import Any, Dict, List, Optional
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -84,6 +84,27 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def vercel_path_rewrite_middleware(request: Request, call_next):
+    """Restores the original API subpath when Vercel rewrites requests to /api/index.py."""
+    path_param = request.query_params.get("__path")
+    if path_param:
+        request.scope["path"] = "/api/" + path_param.lstrip("/")
+    elif request.scope["path"] in ("/api/index.py", "/api/index", "/index.py"):
+        orig_path = (
+            request.headers.get("x-matched-path")
+            or request.headers.get("x-forwarded-uri")
+            or request.headers.get("x-original-uri")
+        )
+        if orig_path:
+            clean_path = orig_path.split("?")[0].lstrip("/")
+            if not clean_path.startswith("api/"):
+                clean_path = "api/" + clean_path
+            request.scope["path"] = "/" + clean_path
+
+    return await call_next(request)
 
 # Mount frontend static assets directory if available
 static_dir = api_dir / "static"
@@ -230,7 +251,6 @@ def get_pipeline():
 
 @app.post("/api/query")
 @app.post("/query")
-@app.post("/api/index.py")
 def execute_query(req: QueryRequest):
     """Execute query with full exception capturing and error reporting."""
     clean_query = req.query.strip()
@@ -432,6 +452,49 @@ def transcribe_voice(req: VoiceTranscribeRequest) -> VoiceTranscribeResponse:
         raise HTTPException(status_code=400, detail=str(err)) from err
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"Transcription failed: {err}") from err
+
+
+# --- Vercel Direct Rewrite Dispatchers ---
+
+@app.post("/api/index.py")
+@app.post("/api/index")
+async def handle_vercel_post_fallback(request: Request):
+    """Smart dispatcher when Vercel rewrites POST requests to /api/index.py directly."""
+    path_param = request.query_params.get("__path", "")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload.")
+
+    if "voice" in path_param or "transcribe" in path_param or "audio_base64" in body:
+        return transcribe_voice(VoiceTranscribeRequest(**body))
+    elif "token" in path_param or ("uid" in body and "query" not in body):
+        return generate_cometchat_token(CometChatTokenRequest(**body))
+    elif "csv_data" in body or "ingest/csv" in path_param:
+        from src.api.routes import IngestCSVRequest
+        return ingest_csv_data(IngestCSVRequest(**body))
+    elif "records" in body or "ingest/sales" in path_param:
+        from src.api.routes import IngestSalesBatchRequest
+        return ingest_sales_batch(IngestSalesBatchRequest(**body))
+    else:
+        return execute_query(QueryRequest(**body))
+
+
+@app.get("/api/index.py")
+@app.get("/api/index")
+def handle_vercel_get_fallback(request: Request):
+    """Smart dispatcher when Vercel rewrites GET requests to /api/index.py directly."""
+    path_param = request.query_params.get("__path", "")
+    if "config" in path_param or "cometchat" in path_param:
+        return get_cometchat_config()
+    elif "models" in path_param:
+        return list_models()
+    elif "status" in path_param:
+        return get_training_status()
+    elif "train" in path_param:
+        return list_registered_models()
+    return {"status": "ok", "message": "Stock AI API Gateway running."}
+
 
 
 
