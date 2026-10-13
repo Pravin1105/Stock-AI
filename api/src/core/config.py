@@ -38,6 +38,11 @@ class Settings:
 
     default_provider: str = os.getenv("DEFAULT_LLM_PROVIDER", "gemini")
 
+    # CometChat Settings (Server-side secrets)
+    cometchat_app_id: str = os.getenv("COMETCHAT_APP_ID", "")
+    cometchat_region: str = os.getenv("COMETCHAT_REGION", "us")
+    cometchat_rest_api_key: str = os.getenv("COMETCHAT_REST_API_KEY", "")
+
     # Project Paths
     base_dir: Path = BASE_DIR
     dataset_dir: Path = BASE_DIR / "dataset"

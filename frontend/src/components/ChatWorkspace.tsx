@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Sparkles, TrendingUp, Database, Brain, Key, Zap, ChevronDown } from 'lucide-react';
+import { Sparkles, TrendingUp, Database, Brain, Key, Zap, ChevronDown, MessageSquare } from 'lucide-react';
 import { ChatMessage, LLMProvider } from '../types';
 import { MessageItem } from './MessageItem';
 import { ChatInput } from './ChatInput';
@@ -11,7 +11,10 @@ interface ChatWorkspaceProps {
   selectedProvider: LLMProvider;
   selectedModel: string;
   hasKeyConfigured: boolean;
+  userApiKey?: string;
   onOpenModelModal: () => void;
+  onOpenCometChat?: () => void;
+  isCometChatOpen?: boolean;
 }
 
 const PROVIDER_LABELS: Record<LLMProvider, string> = {
@@ -28,7 +31,10 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
   selectedProvider,
   selectedModel,
   hasKeyConfigured,
+  userApiKey,
   onOpenModelModal,
+  onOpenCometChat,
+  isCometChatOpen,
 }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -50,8 +56,33 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
           </div>
         </div>
 
-        {/* Model & BYOK Trigger Button */}
+        {/* Header Action Buttons */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {onOpenCometChat && (
+            <button
+              onClick={onOpenCometChat}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                backgroundColor: isCometChatOpen ? 'var(--accent)' : 'white',
+                color: isCometChatOpen ? 'white' : 'var(--text-primary)',
+                border: isCometChatOpen ? '1px solid var(--accent)' : '1px solid var(--border-strong)',
+                borderRadius: '20px',
+                padding: '6px 14px',
+                boxShadow: 'var(--shadow-sm)',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '13px',
+                transition: 'all 0.15s ease',
+              }}
+              title="Open CometChat Team Collaboration Channel"
+            >
+              <MessageSquare size={14} color={isCometChatOpen ? 'white' : 'var(--accent)'} />
+              <span>Team Chat</span>
+            </button>
+          )}
+
           <button
             onClick={onOpenModelModal}
             style={{
@@ -164,7 +195,12 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
       </div>
 
       {/* Persistent Input Dock */}
-      <ChatInput onSend={onSend} disabled={isLoading} />
+      <ChatInput
+        onSend={onSend}
+        disabled={isLoading}
+        provider={selectedProvider}
+        apiKey={userApiKey}
+      />
     </main>
   );
 };

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { ChatWorkspace } from './components/ChatWorkspace';
 import { ModelSelectorModal } from './components/ModelSelectorModal';
+import { CometChatPanel } from './components/CometChatPanel';
 import { getAvailableModels, queryStockAI } from './services/api';
 import { Conversation, ChatMessage, LLMProvider, ModelsCatalogResponse } from './types';
 
@@ -72,6 +73,7 @@ export const App: React.FC = () => {
 
   const [modelsCatalog, setModelsCatalog] = useState<ModelsCatalogResponse | null>(null);
   const [isModelModalOpen, setIsModelModalOpen] = useState(false);
+  const [isCometChatOpen, setIsCometChatOpen] = useState(false);
 
   // Fetch server models catalog on mount
   useEffect(() => {
@@ -292,7 +294,10 @@ export const App: React.FC = () => {
         selectedProvider={selectedProvider}
         selectedModel={selectedModel}
         hasKeyConfigured={hasKeyConfigured}
+        userApiKey={byokKeys[selectedProvider]}
         onOpenModelModal={() => setIsModelModalOpen(true)}
+        onOpenCometChat={() => setIsCometChatOpen((prev) => !prev)}
+        isCometChatOpen={isCometChatOpen}
       />
       <ModelSelectorModal
         isOpen={isModelModalOpen}
@@ -305,6 +310,10 @@ export const App: React.FC = () => {
         onSaveKey={handleSaveKey}
         onClearKey={handleClearKey}
         modelsCatalog={modelsCatalog}
+      />
+      <CometChatPanel
+        isOpen={isCometChatOpen}
+        onClose={() => setIsCometChatOpen(false)}
       />
     </div>
   );

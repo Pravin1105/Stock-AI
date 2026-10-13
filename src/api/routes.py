@@ -210,3 +210,79 @@ def list_registered_models():
         "models": registry.list_models(),
     }
 
+
+# --- CometChat Collaboration & Auth Endpoints ---
+
+class CometChatTokenRequest(BaseModel):
+    uid: str = Field(..., min_length=1, description="CometChat user identifier.")
+    name: Optional[str] = Field(default=None, description="Optional user display name.")
+
+
+@router.get("/cometchat/config")
+def get_cometchat_config():
+    """Returns client-safe CometChat configuration and demo users without leaking secrets."""
+    from src.core.cometchat_service import CometChatService
+    service = CometChatService()
+    return service.get_public_config()
+
+
+@router.post("/cometchat/token")
+def generate_cometchat_token(req: CometChatTokenRequest):
+    """Securely creates/retrieves an auth token for client-side login without exposing REST API key."""
+    from src.core.cometchat_service import CometChatService
+    service = CometChatService()
+    try:
+        return service.generate_auth_token(uid=req.uid, name=req.name)
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=str(err)) from err
+
+
+# --- Voice-to-Query Transcription Endpoint ---
+
+class VoiceTranscribeRequest(BaseModel):
+    audio_base64: str = Field(..., min_length=1, description="Base64 encoded audio bytes.")
+    mime_type: Optional[str] = Field(default="audio/webm", description="Audio MIME format.")
+    provider: Optional[str] = Field(default=None, description="Optional provider override (gemini, groq, openai).")
+    api_key: Optional[str] = Field(default=None, description="Optional user BYOK key.")
+
+
+class VoiceTranscribeResponse(BaseModel):
+    transcript: str
+    provider: str
+    model: Optional[str] = None
+    confidence: Optional[float] = 0.95
+    is_simulated: Optional[bool] = False
+
+
+@router.post("/voice/transcribe", response_model=VoiceTranscribeResponse)
+def transcribe_voice(req: VoiceTranscribeRequest) -> VoiceTranscribeResponse:
+    """Transcribes an audio recording into text for analytical query review."""
+    import base64
+    from src.core.transcription_service import TranscriptionService
+
+    try:
+        raw_b64 = req.audio_base64
+        if "," in raw_b64:
+            raw_b64 = raw_b64.split(",", 1)[1]
+        audio_bytes = base64.b64decode(raw_b64)
+    except Exception as err:
+        raise HTTPException(status_code=400, detail=f"Invalid base64 audio data: {err}") from err
+
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Decoded audio data cannot be empty.")
+
+    service = TranscriptionService()
+    try:
+        result = service.transcribe(
+            audio_bytes=audio_bytes,
+            mime_type=req.mime_type or "audio/webm",
+            provider=req.provider,
+            api_key=req.api_key,
+        )
+        return VoiceTranscribeResponse(**result)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {err}") from err
+
+

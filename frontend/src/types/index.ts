@@ -73,3 +73,34 @@ export interface Conversation {
   messages: ChatMessage[];
 }
 
+export interface CometChatUser {
+  uid: string;
+  name: string;
+  role?: string;
+  avatar?: string;
+}
+
+export interface CometChatMessage {
+  id: string;
+  senderUid: string;
+  senderName?: string;
+  receiverUid: string;
+  text?: string;
+  type: 'text' | 'audio' | 'media' | 'custom';
+  timestamp: number;
+  data?: any;
+  audioUrl?: string;
+  durationSeconds?: number;
+  status?: 'sending' | 'sent' | 'failed';
+  error?: string;
+  audioFile?: File;
+}
+
+export interface CometChatPublicConfig {
+  app_id: string;
+  region: string;
+  is_configured: boolean;
+  default_users: CometChatUser[];
+}
+
+

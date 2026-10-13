@@ -365,5 +365,32 @@ Lists all model versions in the registry, their holdout evaluation metrics, and 
 
 ---
 
+### v2.1 CometChat Voice & Spoken Analytics Endpoints
+
+#### `GET /api/cometchat/config`
+Retrieves public, client-safe CometChat settings (App ID, Region, Persona UIDs) without exposing any server REST API secrets.
+
+#### `POST /api/cometchat/token`
+Generates a secure user authentication token from the backend for CometChat SDK login.
+```json
+{
+  "uid": "analyst_1",
+  "name": "Senior Demand Analyst"
+}
+```
+
+#### `POST /api/voice/transcribe`
+Converts spoken audio to high-accuracy text using multimodal AI (Gemini, Groq Whisper, OpenAI Whisper).
+```json
+{
+  "audio_base64": "GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQRChYECGFOAZwH...",
+  "mime_type": "audio/webm",
+  "provider": "gemini"
+}
+```
+
+---
+
 ## 7. License
 MIT License.
+
